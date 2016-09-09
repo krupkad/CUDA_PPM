@@ -96,13 +96,17 @@ void DCEL::devInit(int blkDim1d, int blkDim2d) {
   // find half-edge pairs. unpaired edges labeled -1.
   cudaMalloc((void**)&dcel.hePairList, M*sizeof(int));
   cudaMemset(dcel.hePairList, -1, M*sizeof(int));
-  kernFindHalfEdgePairs<<<blkCnt2d, blkSize2d>>>
+  kernFindHalfEdgePairs<<<blkDim2d, blkSize2d>>>
     (M, dcel.heSrcList, dcel.heDstList, dcel.hePairList);
   checkCUDAError("pairs", __LINE__);
 
   // upload device DCEL struct
   cudaMalloc((void**)&dev_dcel, sizeof(CuDCEL));
   cudaMemcpy(dev_dcel, &dcel, sizeof(CuDCEL), cudaMemcpyHostToDevice);
+  checkCUDAError("dcel upload", __LINE__);
+
+  cudaThreadSynchronize();
+  checkCUDAError("sync", __LINE__);
 }
 
 // free dcel data
@@ -114,3 +118,19 @@ void DCEL::devFree() {
   cudaFree(dcel.vEdgesEnd);
   cudaFree(dev_dcel);
 }
+
+void DCEL::visUpdate() {
+  /*
+  cudaMemcpy(&vList[0], dcel.vList, dcel.vCount*sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+  for(int i = 0; i < vList.size(); i++)
+    memcpy(&vboData[6*i], &vList[i], 3*sizeof(float));
+  checkCUDAError("download", __LINE__);
+
+  glBindBuffer(GL_ARRAY_BUFFER, vboVtx);
+  glBufferData(GL_ARRAY_BUFFER, 3*vList.size()*sizeof(float), vboVtxData, GL_STATIC_DRAW);
+
+  cudaThreadSynchronize();
+  checkCUDAError("sync", __LINE__);
+  */
+}
+

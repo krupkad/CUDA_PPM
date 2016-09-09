@@ -8,6 +8,8 @@
 #include <fstream>
 #include <iostream>
 
+#include "shader.hpp"
+
 // convenience struct to contain all dcel arrays
 struct CuDCEL {
   glm::vec3 *vList; // list of vertex coordinates
@@ -21,26 +23,34 @@ struct CuDCEL {
 
 class DCEL {
   public:
-    DCEL(const char *fName, unsigned int blkSize = 128) {
-      objRead(fName);
-      devInit(blkSize);
-    }
+    DCEL(const char *fName);
+    ~DCEL();
 
-    ~DCEL() {
-      devFree();
-    }
+    void visUpdate();
+    void visDraw(Shader *shader);
 
   private:
+    // host-friendly data
     std::vector<glm::vec3> vList;
+    std::vector<glm::vec3> nrmList;
+    std::vector<int> fList;
     std::vector<int> heSrcList, heDstList;
 
     CuDCEL dcel, *dev_dcel;
 
+    // GL visualization data
+    float *vboDataBuf;
+    unsigned int vboData, vboIdx;
+    int ssoVtx, ssoNrm;
+
     void objRead(const char *fName);
     bool objReadVtx(std::istream &fStream);
     bool objReadFace(std::istream &fStream);
+
     void devInit(int blkDim1d = 256, int blkDim2d = 32);
     void devFree();
+
+    void visInit();
 };
 
 
