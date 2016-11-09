@@ -1,7 +1,8 @@
 #ifndef SHADER_H
 #define SHADER_H
 
-#include <map>
+//#include <map>
+#include <unordered_map>
 #include <string>
 #include <iostream>
 
@@ -28,9 +29,7 @@ class Shader {
     void requireUniform(std::string name);
     void requireUniform(std::string name, int loc);
 
-    void setVertShader(std::string src);
-    void setFragShader(std::string src);
-    void setGeomShader(std::string src);
+    GLuint setShader(const std::string &src, GLenum shType);
 
     void setUniform(std::string name, const glm::vec3& v);
     void setUniform(std::string name, float x, float y, float z);
@@ -52,10 +51,11 @@ class Shader {
 
     void use();
 
-    bool hasVert, hasFrag, hasGeom, hasProgram;
-    GLuint shadVert, shadFrag, shadGeom, program;
-    std::map<std::string,unsigned int> uMap;
-    std::map<std::string,unsigned int> aMap;
+    std::unordered_map<GLuint,GLuint> shMap;
+    GLuint program;
+    bool hasProgram;
+    std::unordered_map<std::string,unsigned int> uMap;
+    std::unordered_map<std::string,unsigned int> aMap;
 
     static Shader *inUse;
 };

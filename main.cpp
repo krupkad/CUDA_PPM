@@ -14,15 +14,16 @@ void errorCallback(int error, const char *description);
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos);
+void scrollCallback(GLFWwindow* window, double dx, double dy);
 void updateCamera();
-int xSize = 640, ySize = 480;
+int xSize = 1024, ySize = 800;
 float lastX, lastY, xpos, ypos;
 bool leftMousePressed = false, rightMousePressed = false;
 float fovy = (float) (M_PI / 4), zNear = 0.10f, zFar = 100.0f;
-float theta = 1.22f, phi = -0.70f, zoom = 10.0f;
+float theta = 1.22f, phi = -0.70f, zoom = 5.0f;
 glm::vec3 camPos;
 glm::mat4 projection;
-Shader *shader;
+Shader *shader, *ppmShader;
 
 int main(int argc, char *argv[]) {
   if (argc < 2) {
@@ -36,7 +37,7 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
   GLFWwindow* window = glfwCreateWindow(xSize, ySize, "Scene Graph", NULL, NULL);
-  glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+  glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
   glfwMakeContextCurrent(window);
   printf("initialized glfw\n");
 
@@ -58,6 +59,7 @@ int main(int argc, char *argv[]) {
   glfwSetKeyCallback(window, keyCallback);
   glfwSetCursorPosCallback(window, mousePositionCallback);
   glfwSetMouseButtonCallback(window, mouseButtonCallback);
+  glfwSetScrollCallback(window, scrollCallback);
 
   //create the dcel
   DCEL dcel(argv[1]);
@@ -65,22 +67,38 @@ int main(int argc, char *argv[]) {
 
   //create our shader
   shader = new Shader();
-  shader->setFragShader("dcel.frag.glsl");
-  shader->setVertShader("dcel.vert.glsl");
+  shader->setShader("dcel.frag.glsl", GL_FRAGMENT_SHADER);
+  shader->setShader("dcel.vert.glsl", GL_VERTEX_SHADER);
   shader->recompile();
   printGLErrorLog();
+
+  //create our tesselation shader
+  ppmShader = new Shader();
+  /*
+  ppmShader->setShader("ppm.tcl.glsl", GL_TESS_CONTROL_SHADER);
+  ppmShader->setShader("ppm.tel.glsl", GL_TESS_EVALUATION_SHADER);
+  ppmShader->setShader("ppm.frag.glsl", GL_FRAGMENT_SHADER);
+  ppmShader->setShader("ppm.vert.glsl", GL_VERTEX_SHADER);
+  ppmShader->recompile();
+  printGLErrorLog();
+  */
 
   printf("begin main loop\n");
   int nbFrames = 0;
   double lastTime = glfwGetTime();
   updateCamera();
+  double dt = 0, alpha = .95;
   while(!glfwWindowShouldClose(window)) {
     // Clear the screen so that we only see newly drawn images
     // glfwSetCursorPos(window, xSize/2, ySize/2);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     /* TODO: draw things here */
-    dcel.visDraw(shader);
+    double t1 = clock();
+    dcel.visUpdate();
+    dcel.visDraw(shader, ppmShader);
+    double t2 = clock();
+    dt = (t2-t1)*(1.0-alpha) + dt*alpha;
 
     // Move the rendering we just made onto the screen
     glfwSwapBuffers(window);
@@ -89,7 +107,7 @@ int main(int argc, char *argv[]) {
     double currentTime = glfwGetTime();
     nbFrames++;
     if (currentTime - lastTime >= 1.0){
-       printf("%.1f fps\n", double(nbFrames)/(currentTime - lastTime));
+       printf("%.1f fps (dt = %f us)\n", double(nbFrames)/(currentTime - lastTime), 1.0E6*dt/CLOCKS_PER_SEC);
        nbFrames = 0;
        lastTime += 1.0;
     }
@@ -101,6 +119,7 @@ int main(int argc, char *argv[]) {
   glfwDestroyWindow(window);
   glfwTerminate();
   delete shader;
+  delete ppmShader;
 
   return 0;
 }
@@ -109,7 +128,8 @@ void resizeCallback(GLFWwindow* window, int x, int y)
 {
   xSize = x;
   ySize = y;
-  //scene->resize(xSize,ySize);
+  glViewport(0,0,x,y);
+  updateCamera();
 }
 
 void errorCallback(int error, const char *description) {
@@ -135,14 +155,15 @@ void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
     theta = std::fmax(0.01f, std::fmin(theta, 3.14f));
     updateCamera();
   }
-  else if (rightMousePressed) {
-    zoom += (ypos - lastY) / ySize;
-    zoom = std::fmax(0.1f, std::fmin(zoom, 5.0f));
-    updateCamera();
-  }
 
   lastX = xpos;
   lastY = ypos;
+}
+
+void scrollCallback(GLFWwindow* window, double dx, double dy) {
+  zoom += 10.0f*dy / ySize;
+  zoom = std::fmax(0.1f, std::fmin(zoom, 10.0f));
+  updateCamera();
 }
 
 void updateCamera() {

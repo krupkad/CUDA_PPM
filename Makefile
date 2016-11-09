@@ -1,12 +1,12 @@
 CC=clang
 CXX=clang++
 CFLAGS=-Wall -g
-CXXFLAGS=$(CFLAGS)  -std=c++11 -g
-NVFLAGS=-arch=sm_50  -std=c++11
+CXXFLAGS=$(CFLAGS) -std=c++11
+NVFLAGS=-arch=sm_50 -std=c++11  -lineinfo -g
 NVCC=nvcc
 EXE=dcel
 OBJS = dcel_cuda.o dcel.o shader.o main.o
-LDFLAGS=-lGL -lGLU -lGLEW -lglfw  -lcuda -lcudart -lm
+LDFLAGS=-lGL -lGLU -lGLEW -lglfw  -lcuda -lcudart -lm -lcublas -llapack
 
 all: $(EXE)
 
@@ -21,3 +21,6 @@ $(EXE): $(OBJS)
 
 %.o: %.cu
 	$(NVCC) $(NVFLAGS) -c -o $@ $<
+
+clean:
+	rm -rf $(OBJS) $(EXE)

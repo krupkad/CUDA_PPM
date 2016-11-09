@@ -1,6 +1,6 @@
 #include "shader.hpp"
 
-#include <map>
+#include <unordered_map>
 #include <string>
 #include <iostream>
 #include <fstream>
@@ -17,55 +17,35 @@ static void printShaderInfoLog(int shader);
 
 Shader* Shader::inUse = nullptr;
 
-Shader::Shader() : hasVert(false), hasFrag(false), hasGeom(false), hasProgram(false) {}
+Shader::Shader() :  hasProgram(false) {}
+
 Shader::~Shader() {
-  if(hasVert)
-    glDeleteShader(shadVert);
-  if(hasFrag)
-    glDeleteShader(shadFrag);
-  if(hasGeom)
-    glDeleteShader(shadGeom);
+  for (const auto &itr : shMap)
+    glDeleteShader(itr.second);
   if(hasProgram)
     glDeleteProgram(program);
 }
 
-Shader::Shader(std::string src) : hasVert(false), hasFrag(false), hasGeom(false), hasProgram(false)  {
-  setVertShader(src + ".vert.glsl");
-  setFragShader(src + ".frag.glsl");
-  setGeomShader(src + ".geom.glsl");
+Shader::Shader(std::string src) : hasProgram(false)  {
+  setShader(src + ".vert.glsl", GL_VERTEX_SHADER);
+  setShader(src + ".frag.glsl", GL_FRAGMENT_SHADER);
+  setShader(src + ".geom.glsl", GL_GEOMETRY_SHADER);
   recompile();
 }
 
+GLuint Shader::setShader(const std::string &src, GLenum type) {
+  const auto itr = shMap.find(type);
+  if (itr != shMap.end())
+    glDeleteShader(itr->second);
 
-static GLuint setShader(const std::string &src, GLenum type) {
   std::string sourceStr = textFileRead(src);
   const char *sourceCStr = sourceStr.c_str();
   GLuint shader = glCreateShader(type);
   glShaderSource(shader, 1, &sourceCStr, NULL);
   glCompileShader(shader);
   printShaderInfoLog(shader);
+  shMap[type] = shader;
   return shader;
-}
-
-void Shader::setVertShader(std::string src) {
-  if(hasVert)
-    glDeleteShader(shadVert);
-  shadVert = setShader(src, GL_VERTEX_SHADER);
-  hasVert = true;
-}
-
-void Shader::setFragShader(std::string src) {
-  if(hasFrag)
-    glDeleteShader(shadFrag);
-  shadFrag = setShader(src, GL_FRAGMENT_SHADER);
-  hasFrag = true;
-}
-
-void Shader::setGeomShader(std::string src) {
-  if(hasGeom)
-    glDeleteShader(shadGeom);
-  shadGeom = setShader(src, GL_GEOMETRY_SHADER);
-  hasGeom = true;
 }
 
 void Shader::setUniform(std::string name, const glm::vec3& v) {
@@ -141,21 +121,12 @@ void Shader::recompile() {
     glDeleteProgram(program);
   program = glCreateProgram();
 
-
-  if(hasVert)
-    glAttachShader(program, shadVert);
-  if(hasFrag)
-    glAttachShader(program, shadFrag);
-  if(hasGeom)
-    glAttachShader(program, shadGeom);
+  for (const auto &itr : shMap)
+    glAttachShader(program,itr.second);
   glLinkProgram(program);
   printLinkInfoLog(program);
-  if(hasVert)
-    glDetachShader(program, shadVert);
-  if(hasFrag)
-    glDetachShader(program, shadFrag);
-  if(hasGeom)
-    glDetachShader(program, shadGeom);
+  for (const auto &itr : shMap)
+    glDetachShader(program,itr.second);
 
   hasProgram = true;
 }
@@ -163,7 +134,7 @@ void Shader::recompile() {
 int Shader::resolveUniform(std::string name) {
   use();
 
-  std::map<std::string,unsigned int>::iterator itr = uMap.find(name);
+  auto itr = uMap.find(name);
   int loc;
   if(itr != uMap.end()) {
     loc = itr->second;
@@ -180,7 +151,7 @@ int Shader::resolveUniform(std::string name) {
 int Shader::resolveAttribute(std::string name) {
   use();
 
-  std::map<std::string,unsigned int>::iterator itr = aMap.find(name);
+  auto itr = aMap.find(name);
   int loc;
   if(itr != aMap.end()) {
     loc = itr->second;
