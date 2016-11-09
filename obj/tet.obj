@@ -1,0 +1,27 @@
+# File produced by Open Asset Import Library (http://www.assimp.sf.net)
+# (assimp v3.1.187496374)
+
+mtllib tet.obj.mtl
+
+# 4 vertex positions
+v  1 0 0
+v  0 0 0
+v  0 1 0
+v  0 0 1
+
+# 0 UV coordinates
+
+# 4 vertex normals
+vn 1 0 0
+vn -0.57735 -0.57735 -0.57735
+vn 0 1 0
+vn 0 0 1
+
+# Mesh '<OFFRoot>' with 4 faces
+g <OFFRoot>
+usemtl $Material_0
+f  1//1 2//2 3//3
+f  2//2 1//1 4//4
+f  3//3 2//2 4//4
+f  1//1 3//3 4//4
+
