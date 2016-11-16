@@ -10,6 +10,8 @@
 #include <cublas_v2.h>
 #include <cstdio>
 
+#include <functional>
+
 #include <GL/glew.h>
 #include <GL/glu.h>
 #include <GL/gl.h>
@@ -61,38 +63,66 @@ inline __host__ __device__ float2 operator-(float b, float2 a)
 	return make_float2(b - a.x, b - a.y);
 }
 
+// MSVC 2013 doesnt support constexpr
+#ifdef _WIN32
+#define LA_DECL(a,b) static decltype(b) a
+#define LA_DEFN(a,b) decltype(b) a = b
+#define LA_DECL_PTR(a,b) static decltype(b) * a
+#define LA_DEFN_PTR(a,b) decltype(b) * a = b
+#else
+#define LA_DECL(a,b) static constexpr auto a = b
+#define LA_DECL_PTR(a,b) LA_DECL(a,b)
+#define LA_DEFN(a,b)
+#define LA_DEFN_PTR(a,b)
+#endif
+
 template <typename T>
 struct LA {};
 
 template <>
 struct LA<float> {
-  static constexpr auto gemm = cublasSgemm;
-  static constexpr auto geam = cublasSgeam;
-  static constexpr auto gesdd = sgesdd_;
-  static constexpr auto dgmm = cublasSdgmm;
+  LA_DECL_PTR(gemm, cublasSgemm);
+  LA_DECL_PTR(geam, cublasSgeam);
+  LA_DECL_PTR(gesdd, sgesdd_);
+  LA_DECL_PTR(dgmm, cublasSdgmm);
+  LA_DECL(zero, 0.0f);
+  LA_DECL(one, 1.0f);
   typedef float2 T2;
   typedef float4 T4;
   static inline __host__ __device__  T2 mkPair(float x, float y) {
     return make_float2(x,y);
   }
-  static constexpr float zero = 0.0f;
-  static constexpr float one = 1.0f;
+
 };
+
+LA_DEFN_PTR(LA<float>::gemm, cublasSgemm);
+LA_DEFN_PTR(LA<float>::geam, cublasSgeam);
+LA_DEFN_PTR(LA<float>::gesdd, sgesdd_);
+LA_DEFN_PTR(LA<float>::dgmm, cublasSdgmm);
+LA_DEFN(LA<float>::zero, 0.0f);
+LA_DEFN(LA<float>::one, 1.0f);
 
 template <>
 struct LA<double> {
-  static constexpr auto gemm = cublasDgemm;
-  static constexpr auto geam = cublasDgeam;
-  static constexpr auto gesdd = dgesdd_;
-  static constexpr auto dgmm = cublasDdgmm;
+  LA_DECL_PTR(gemm, cublasDgemm);
+  LA_DECL_PTR(geam, cublasDgeam);
+  LA_DECL_PTR(gesdd, dgesdd_);
+  LA_DECL_PTR(dgmm, cublasDdgmm);
+  LA_DECL(zero, 0.0);
+  LA_DECL(one, 1.0);
   typedef double2 T2;
   typedef double4 T4;
   static inline __host__ __device__  T2 mkPair(double x, double y) {
     return make_double2(x,y);
   }
-  static constexpr double zero = 0.0;
-  static constexpr double one = 1.0;
 };
+
+LA_DEFN_PTR(LA<double>::gemm, cublasDgemm);
+LA_DEFN_PTR(LA<double>::geam, cublasDgeam);
+LA_DEFN_PTR(LA<double>::gesdd, dgesdd_);
+LA_DEFN_PTR(LA<double>::dgmm, cublasDdgmm);
+LA_DEFN(LA<double>::zero, 0.0);
+LA_DEFN(LA<double>::one, 1.0);
 
 // utility to fetch cuda errors and fail
 void checkCUDAError(const char *msg, int line = -1) {
@@ -117,16 +147,16 @@ __global__ void kernCalcBFunc(int nGrid2, const T4 *gridUVXY, int nBasis, T2 *ba
 
   // convert control point index to parameter
   const T4 &p = gridUVXY[i];
-  T2 xy = T(0.5)*LA<T>::mkPair(p.z+LA<T>::one, p.w+LA<T>::one);
+  T2 xy = T(0.5)*LA<T>::mkPair(p.z+T(1), p.w+T(1));
   T2 *work = &basis[i*nBasis];
   for (int k = 0; k < nBasis-1; k++)
-    work[k].x = work[k].y = LA<T>::zero;
-  work[nBasis-1].x = work[nBasis-1].y = LA<T>::one;
+    work[k].x = work[k].y = T(0);
+  work[nBasis-1].x = work[nBasis-1].y = T(1);
 
   for (int off = nBasis-2; off >= 0; off--) {
     for (int k = off; k < nBasis-1; k++) {
-      work[k].x = work[k].x*xy.x + work[k+1].x*(LA<T>::one - xy.x);
-      work[k].y = work[k].y*xy.y + work[k+1].y*(LA<T>::one - xy.y);
+      work[k].x = work[k].x*xy.x + work[k+1].x*(T(1) - xy.x);
+      work[k].y = work[k].y*xy.y + work[k+1].y*(T(1) - xy.y);
     }
     work[nBasis-1].x = xy.x*work[nBasis-1].x;
     work[nBasis-1].y = xy.y*work[nBasis-1].y;
