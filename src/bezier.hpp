@@ -1,16 +1,10 @@
 #ifndef BEZIER_H
 #define BEZIER_H
 
-#ifdef _WIN32
-#include <f2c.h>
-#include <clapack.h>
-#else
-#include <lapacke.h>
-#endif
-#include <cublas_v2.h>
-#include <cstdio>
+#include "util/lapack.hpp"
+#include "util/math.hpp"
 
-#include <functional>
+#include <cstdio>
 
 #include <GL/glew.h>
 #include <GL/glu.h>
@@ -20,109 +14,6 @@
 #include <cuda_gl_interop.h>
 
 #include "dcel.hpp"
-
-inline __host__ __device__ double2 operator*(double2 a, double b)
-{
-    return make_double2(a.x * b, a.y * b);
-}
-inline __host__ __device__ double2 operator*(double b, double2 a)
-{
-    return make_double2(b * a.x, b * a.y);
-}
-inline __host__ __device__ double2 operator*(double2 a, double2 b)
-{
-    return make_double2(a.x * b.x, a.y * b.y);
-}
-inline __host__ __device__ double2 operator+(double2 a, double2 b)
-{
-    return make_double2(a.x + b.x, a.y + b.y);
-}
-inline __host__ __device__ double2 operator-(double b, double2 a)
-{
-    return make_double2(b - a.x, b - a.y);
-}
-
-inline __host__ __device__ float2 operator*(float2 a, float b)
-{
-	return make_float2(a.x * b, a.y * b);
-}
-inline __host__ __device__ float2 operator*(float b, float2 a)
-{
-	return make_float2(b * a.x, b * a.y);
-}
-inline __host__ __device__ float2 operator*(float2 a, float2 b)
-{
-	return make_float2(a.x * b.x, a.y * b.y);
-}
-inline __host__ __device__ float2 operator+(float2 a, float2 b)
-{
-	return make_float2(a.x + b.x, a.y + b.y);
-}
-inline __host__ __device__ float2 operator-(float b, float2 a)
-{
-	return make_float2(b - a.x, b - a.y);
-}
-
-// MSVC 2013 doesnt support constexpr
-#ifdef _WIN32
-#define LA_DECL(a,b) static decltype(b) a
-#define LA_DEFN(a,b) decltype(b) a = b
-#define LA_DECL_PTR(a,b) static decltype(b) * a
-#define LA_DEFN_PTR(a,b) decltype(b) * a = b
-#else
-#define LA_DECL(a,b) static constexpr auto a = b
-#define LA_DECL_PTR(a,b) LA_DECL(a,b)
-#define LA_DEFN(a,b)
-#define LA_DEFN_PTR(a,b)
-#endif
-
-template <typename T>
-struct LA {};
-
-template <>
-struct LA<float> {
-  LA_DECL_PTR(gemm, cublasSgemm);
-  LA_DECL_PTR(geam, cublasSgeam);
-  LA_DECL_PTR(gesdd, sgesdd_);
-  LA_DECL_PTR(dgmm, cublasSdgmm);
-  LA_DECL(zero, 0.0f);
-  LA_DECL(one, 1.0f);
-  typedef float2 T2;
-  typedef float4 T4;
-  static inline __host__ __device__  T2 mkPair(float x, float y) {
-    return make_float2(x,y);
-  }
-
-};
-
-LA_DEFN_PTR(LA<float>::gemm, cublasSgemm);
-LA_DEFN_PTR(LA<float>::geam, cublasSgeam);
-LA_DEFN_PTR(LA<float>::gesdd, sgesdd_);
-LA_DEFN_PTR(LA<float>::dgmm, cublasSdgmm);
-LA_DEFN(LA<float>::zero, 0.0f);
-LA_DEFN(LA<float>::one, 1.0f);
-
-template <>
-struct LA<double> {
-  LA_DECL_PTR(gemm, cublasDgemm);
-  LA_DECL_PTR(geam, cublasDgeam);
-  LA_DECL_PTR(gesdd, dgesdd_);
-  LA_DECL_PTR(dgmm, cublasDdgmm);
-  LA_DECL(zero, 0.0);
-  LA_DECL(one, 1.0);
-  typedef double2 T2;
-  typedef double4 T4;
-  static inline __host__ __device__  T2 mkPair(double x, double y) {
-    return make_double2(x,y);
-  }
-};
-
-LA_DEFN_PTR(LA<double>::gemm, cublasDgemm);
-LA_DEFN_PTR(LA<double>::geam, cublasDgeam);
-LA_DEFN_PTR(LA<double>::gesdd, dgesdd_);
-LA_DEFN_PTR(LA<double>::dgmm, cublasDdgmm);
-LA_DEFN(LA<double>::zero, 0.0);
-LA_DEFN(LA<double>::one, 1.0);
 
 // utility to fetch cuda errors and fail
 void checkCUDAError(const char *msg, int line = -1) {
@@ -165,14 +56,14 @@ __global__ void kernCalcBFunc(int nGrid2, const T4 *gridUVXY, int nBasis, T2 *ba
 
 template <typename T, typename T2=typename LA<T>::T2, typename T4=typename LA<T>::T4 >
 __global__ void kernCalcBMatrix(int nGrid2, int nBasis, T2 *basis, T *A) {
-  int ij = blockIdx.x * blockDim.x + threadIdx.x; // basis function
-  int k = blockIdx.y * blockDim.y + threadIdx.y; // control point
+  int i = blockIdx.x * blockDim.x + threadIdx.x; // basis function
+  int j = blockIdx.y * blockDim.y + threadIdx.y; // basis function
+  int k = blockIdx.z * blockDim.z + threadIdx.z; // control point
 
-  if (ij >= nBasis*nBasis || k >= nGrid2)
+  if (i >= nBasis || j >= nBasis || k >= nGrid2)
     return;
 
-  int i = ij % nBasis, j = ij / nBasis;
-
+  int ij = i + nBasis*j;
   A[k + ij*nGrid2] = basis[k*nBasis + i].x * basis[k*nBasis + j].y;
 }
 
@@ -212,9 +103,9 @@ Bezier<T>::Bezier(int vDeg) : vDeg(vDeg) {
   printf("created handle\n");
 
 
-  nBasis = ((vDeg > 6) ? (vDeg + 1) : 7);
+  nBasis = 1 + ((vDeg > 3) ? vDeg : 3);
   nBasis2 = nBasis*nBasis;
-  nGrid = 2*nBasis + 1;
+  nGrid = 2*nBasis;
   nGrid2 = nGrid*nGrid;
 
   mkGrid();
@@ -228,7 +119,7 @@ Bezier<T>::Bezier(int vDeg) : vDeg(vDeg) {
   printf("performed svd\n");
 
   mkLLSProj();
-  printf("created projector\n");
+  printf("created LLS matrix\n");
 
   cudaDeviceSynchronize();
 }
@@ -236,12 +127,12 @@ Bezier<T>::Bezier(int vDeg) : vDeg(vDeg) {
 template  <typename T>
 void Bezier<T>::mkGrid() {
   std::vector<T4> uvxys;
-  for (int i = -nBasis; i <= nBasis; i++) {
-  for (int j = -nBasis; j <= nBasis; j++) {
-    T x(i); x /= nBasis;
-    T y(j); y /= nBasis;
+  for (int j = 0; j < nGrid; j++) {
+  for (int i = 0; i < nGrid; i++) {
+    T x(2 * i - nGrid + 1); x /= nGrid - 1;
+    T y(2 * j - nGrid + 1); y /= nGrid - 1;
 
-    T alpha(2.0*M_PI/vDeg), th = ((j < 0) ? 2.0*M_PI : 0) + atan2(y,x), r = hypot(x,y);
+    T alpha(2.0*M_PI/vDeg), th = ((y < 0) ? 2.0*M_PI : 0) + atan2(y,x), r = hypot(x,y);
     T dTh = fmod(th, alpha);
 
     T4 uvxy;
@@ -252,8 +143,6 @@ void Bezier<T>::mkGrid() {
     uvxy.z = x;
     uvxy.w = y;
     uvxys.push_back(uvxy);
-    if (fabs(0.5 - uvxy.x - uvxy.y) > 0.5)
-      printf("wout %f/%f\n", dTh, alpha);
   }}
   cudaMalloc((void**)&dev_gridUVXY, nGrid2*sizeof(T4));
   cudaMemcpy(dev_gridUVXY, &uvxys[0], nGrid2*sizeof(T4), cudaMemcpyHostToDevice);
@@ -312,8 +201,8 @@ T *Bezier<T>::mkBasis(int sz1, int sz2) {
   T *dev_A;
   cudaMalloc((void**)&dev_A, nGrid2*nBasis2*sizeof(T));
 
-  dim3 blkSz2(sz2, sz2);
-  dim3 blkCnt2((nBasis2+sz2-1)/sz2,(nGrid2+sz2-1)/sz2);
+  dim3 blkSz2(8,8,16);
+  dim3 blkCnt2((nBasis + 8 - 1) / 8, (nBasis + 8 - 1) / 8, (nGrid2 + 16 - 1) / 16);
   kernCalcBMatrix<T><<<blkCnt2, blkSz2>>>(nGrid2, nBasis, dev_basis, dev_A);
   checkCUDAError("kernCalcBMatrix\n");
 
@@ -337,7 +226,6 @@ int Bezier<T>::svd(T *A) {
   char job = 'A';
   LA<T>::gesdd(&job, &nGrid2, &nBasis2, NULL, &nGrid2, NULL, NULL, &nGrid2, NULL, &nBasis2,
                 &lwork_query, &lwork, NULL, &ret);
-  printf("gesdd probe ret %d\n", ret);
 
   // allocate memory and perform svd
   lwork = (int)lwork_query + 1;
@@ -350,7 +238,6 @@ int Bezier<T>::svd(T *A) {
                 work, &lwork, iwork, &ret);
   delete work;
   delete iwork;
-  printf("gesdd exec ret %d\n", ret);
 
   return ret;
 }

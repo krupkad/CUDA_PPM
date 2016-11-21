@@ -88,10 +88,10 @@ int main(int argc, char *argv[]) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     /* TODO: draw things here */
-    double t1 = clock();
+    double t1 = glfwGetTime();
     dcel.visUpdate();
+    double t2 = glfwGetTime();
     dcel.visDraw(shader, ppmShader);
-    double t2 = clock();
     dt = (t2-t1)*(1.0-alpha) + dt*alpha;
 
     // Move the rendering we just made onto the screen
@@ -127,7 +127,7 @@ void resizeCallback(GLFWwindow* window, int x, int y)
 }
 
 void errorCallback(int error, const char *description) {
-  fprintf(stderr, "error %d: %s\n", error, description);
+  fprintf(stderr, "GLFW error %d: %s\n", error, description);
 }
 
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -155,7 +155,7 @@ void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
 }
 
 void scrollCallback(GLFWwindow* window, double dx, double dy) {
-  zoom += 10.0f*dy / ySize;
+  zoom += 30.0f*dy / ySize;
   zoom = std::fmax(0.1f, std::fmin(zoom, 10.0f));
   updateCamera();
 }

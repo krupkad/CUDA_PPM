@@ -31,19 +31,17 @@ find_package(GLEW)
 
 find_package(OpenGL)
 
-if(WIN32)
-	set(LAPACK_INCLUDE_DIR "external/include")
-	set(LAPACK_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
-	find_library(LAPACK_LIBRARY "lapack" HINTS "${LAPACK_LIBRARY_DIR}")
-	
-	set(BLAS_INCLUDE_DIR "external/include")
-	set(BLAS_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
-	find_library(BLAS_LIBRARY "blas" HINTS "${BLAS_LIBRARY_DIR}")
-	
-	set(LIBF2C_INCLUDE_DIR "external/include")
-	set(LIBF2C_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
-	find_library(LIBF2C_LIBRARY "libf2c" HINTS "${LIBF2C_LIBRARY_DIR}")
-endif()
+set(LAPACK_INCLUDE_DIR "external/include")
+set(LAPACK_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
+find_library(LAPACK_LIBRARY "lapack" HINTS "${LAPACK_LIBRARY_DIR}")
+
+set(BLAS_INCLUDE_DIR "external/include")
+set(BLAS_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
+find_library(BLAS_LIBRARY "blas" HINTS "${BLAS_LIBRARY_DIR}")
+
+set(LIBF2C_INCLUDE_DIR "external/include")
+set(LIBF2C_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
+find_library(LIBF2C_LIBRARY "f2c" HINTS "${LIBF2C_LIBRARY_DIR}")
 
 
 set(CORELIBS

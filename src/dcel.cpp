@@ -17,12 +17,8 @@
 
 
 DCEL::DCEL(const char *fName) {
-  degMin = INT_MAX;
-  degMax = INT_MIN;
-
   objRead(fName);
   printf("read done\n");
-  heSort();
   printf("loop sort done\n");
   devInit();
   printf("dev done\n");
@@ -38,7 +34,7 @@ DCEL::~DCEL() {
 }
 
 // sort half edges a) by source, b) in patch boundary order
-void DCEL::heSort() {
+void DCEL::getHeLoops() {
   for(auto &itr : loopMap) {
     std::vector<int> &loop = itr.second;
 
@@ -48,7 +44,7 @@ void DCEL::heSort() {
     for (first = 0; first < loop.size(); first++) {
       bool hasPred = false;
       for (int i = first+1; i < loop.size(); i++) {
-        if (heList[loop[first]].x == heList[loop[i]].y) {
+        if (heFaces[loop[first]].x == heFaces[loop[i]].y) {
           hasPred = true;
           break;
         }
@@ -62,9 +58,9 @@ void DCEL::heSort() {
 
     // finish the chain
     for (int i = 0; i < loop.size()-1; i++) {
-      int dst = heList[loop[i]].y;
+      int dst = heFaces[loop[i]].y;
       for (int j = i+1; j < loop.size(); j++) {
-        int src = heList[loop[j]].x;
+        int src = heFaces[loop[j]].x;
         if (src == dst) {
           std::swap(loop[i+1],loop[j]);
           break;
@@ -74,20 +70,22 @@ void DCEL::heSort() {
   }
 
   // create a halfedge list ordered by both source vertex and loop sequence
-  std::vector<int4> new_heList;
+  degMin = INT_MAX;
+  degMax = INT_MIN;
   for (int v1 = 0; v1 < vList.size(); v1++) {
     int2 vRange;
-    vRange.x = new_heList.size();
+    vRange.x = heLoops.size();
     for (int heIdx : loopMap[v1])
-      new_heList.push_back(make_int4(v1, heList[heIdx].x, heList[heIdx].y, heList[heIdx].w));
-    vRange.y = new_heList.size();
+      heLoops.push_back(make_int4(v1, heFaces[heIdx].x, 0, 0));
+	  vRange.y = heLoops.size();
     vBndList.push_back(vRange);
+
     if (vRange.y - vRange.x < degMin)
       degMin = vRange.y - vRange.x;
     if (vRange.y - vRange.x > degMax)
       degMax = vRange.y - vRange.x;
   }
-  heList = new_heList;
+  nDeg = degMax - degMin + 1;
 }
 
 bool DCEL::objReadVtx(std::istream &fStream) {
@@ -134,17 +132,17 @@ bool DCEL::objReadFace(std::istream &fStream) {
 
   int4 he;
 
-  he = make_int4(vIdxList[0]-1, vIdxList[1]-1, vIdxList[2]-1, 3*fCnt + 0);
-  loopMap[vIdxList[2]-1].push_back(heList.size());
-  heList.push_back(he);
+  he = make_int4(vIdxList[0]-1, vIdxList[1]-1, 0, 0);
+  loopMap[vIdxList[2]-1].push_back(heFaces.size());
+  heFaces.push_back(he);
 
-  he = make_int4(vIdxList[1]-1, vIdxList[2]-1, vIdxList[0]-1, 3*fCnt + 1);
-  loopMap[vIdxList[0]-1].push_back(heList.size());
-  heList.push_back(he);
+  he = make_int4(vIdxList[1]-1, vIdxList[2]-1, 0, 0);
+  loopMap[vIdxList[0]-1].push_back(heFaces.size());
+  heFaces.push_back(he);
 
-  he = make_int4(vIdxList[2]-1, vIdxList[0]-1, vIdxList[1]-1, 3*fCnt + 2);
-  loopMap[vIdxList[1]-1].push_back(heList.size());
-  heList.push_back(he);
+  he = make_int4(vIdxList[2]-1, vIdxList[0]-1, 0, 0);
+  loopMap[vIdxList[1]-1].push_back(heFaces.size());
+  heFaces.push_back(he);
 
   return true;
 }
@@ -175,7 +173,7 @@ void DCEL::objRead(const char *fName) {
 
   // check that vertex indices are valid
   unsigned int N = vList.size();
-  for (const int4 &v : heList) {
+  for (const int4 &v : heFaces) {
     if (v.x < 0 || v.x >= N || v.y < 0 || v.y >= N)
       throw std::logic_error("DCEL: invalid vertex");
   }
@@ -217,9 +215,9 @@ void DCEL::visDraw(Shader *vShader, Shader *tShader) {
   glDrawElements(GL_TRIANGLES, 3*nFace, GL_UNSIGNED_INT, 0);
 
   glBindBuffer(GL_ARRAY_BUFFER, vboVtxList);
-  glBufferData(GL_ARRAY_BUFFER, 3*nFace*nSubVtx*sizeof(float), tessVtx, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, 3*nFace*nSubVtx*sizeof(float), vtxOut, GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, vboIdx);
-  glBufferData(GL_ARRAY_BUFFER, 3*nFace*nSubFace*sizeof(int), tessIdx, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, 3*nFace*nSubFace*sizeof(int), idxOut, GL_STATIC_DRAW);
 
   glLineWidth(1.0f);
   vShader->setUniform("uColor", 0.0f, 1.0f, 0.0f);
@@ -235,7 +233,6 @@ void DCEL::visFree() {
   delete vboVtxListBuf;
   glDeleteBuffers(1,&vboVtxList); // vList.size() vertices (3 floats)
   glDeleteBuffers(1,&vboIdx); // vList.size() vertices (3 floats)
-  cudaGraphicsUnregisterResource(cuVtxResource);
 }
 
 
