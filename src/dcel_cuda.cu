@@ -26,27 +26,13 @@ __global__ void kBezEval(int deg, int nBasis, int nSubVtx, const float2 *uvIdxMa
   float ca, sa;
   sincospif(a, &sa, &ca);
   float x = uv.x + uv.y*ca, y = uv.y*sa;
-
-  // get patch xy
   a *= dIdx;
   sincospif(a, &sa, &ca);
+
+  // calculate bernstein polynomials
   p = 0.5f*make_float2(x*ca - y*sa, x*sa + y*ca) + 0.5f;
   np = 1.0f - p;
-
-  // initialize shared memory. nothing shared between blocks so no sync
-  for (int k = 0; k < nBasis-1; k++)
-    sWork[k].x = sWork[k].y = 0.0f;
-  sWork[nBasis-1].x = sWork[nBasis-1].y = 1.0f;
-
-  // compute all basis functions
-  for (int off = nBasis-2; off >= 0; off--) {
-    for (int k = off; k < nBasis-1; k++) {
-      sWork[k].x = sWork[k].x*p.x + sWork[k+1].x*np.x;
-      sWork[k].y = sWork[k].y*p.y + sWork[k+1].y*np.y;
-    }
-    sWork[nBasis-1].x = p.x*sWork[nBasis-1].x;
-    sWork[nBasis-1].y = p.y*sWork[nBasis-1].y;
-  }
+  kBnBasis<float>(nBasis, p, np, sWork);
 
   // compute weight
   float h2 = cospif(1.0f / (deg > 4 ? deg : 4)), h1 = 0.25f*h2;
@@ -61,11 +47,7 @@ __global__ void kBezEval(int deg, int nBasis, int nSubVtx, const float2 *uvIdxMa
   for (int j = 0; j < nBasis; j++) {
     bzOut[j + nBasis*k + oIdx*nBasis*nBasis].x = sWork[j].x * sWork[k].y;
     bzOut[j + nBasis*k + oIdx*nBasis*nBasis].y = w;
-  }
-  }
-  //printf("(%f %f) (%f %f) %f (%f %f %f)\n", x,y, uv.x, uv.y, w, r,h1,h2);
-
-
+  }}
 }
 
 // given a sorted list, find indices of where each block starts/ends
@@ -81,7 +63,7 @@ __global__ void kGetLoopBoundaries(int nHe, const int4 *heList, int2 *vBndList) 
 }
 
 // given loop boundaries, fill in he.z (loop order) and he.w (loop degree)
-__global__ void kSetHeRootInfo(int nHe, const int2 *vBndList, int4 *heList, int4 *heLoops) {
+__global__ void kGetHeRootInfo(int nHe, const int2 *vBndList, int4 *heList, int4 *heLoops) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= nHe)
     return;
@@ -186,7 +168,6 @@ __global__ void kTessVtx(int nVtx, int nFace, int nSub, int nSubVtx, int nBasis2
   int uvIdx = blockIdx.y * blockDim.y + threadIdx.y;
   if (fIdx >= nFace || uvIdx >= nSubVtx)
     return;
-  int vIdx = fIdx*nSubVtx + uvIdx;
 
   const int4 &he0 = heFaces[3 * fIdx + 0];
   const int4 &he1 = heFaces[3 * fIdx + 1];
@@ -257,21 +238,14 @@ void DCEL::genSampTex() {
         int ord = floorf(th / alpha);
         float v = r*sinf(dTh) / sinf(alpha);
         float u = r*cosf(dTh) - v*cosf(alpha);
-		float w = 1.0f - u - v;
-		if (w < 0) {
-			float k = u + v;
-			u /= k;
-			v /= k;
-			w = 0.0f;
-			printf("rescale %f %f %f\n", u, v, w);
-		}
-		/*
-        float w = 1.0f - u - v;
-        if (fabs(w - 0.5f) > 0.5f) {
-          u += w*u / (u + v);
-          v += w*v / (u + v);
-		}*/
-        //printf("%f %f %d\n",u,v,ord);
+		    float w = 1.0f - u - v;
+		    if (w < 0) {
+			    float k = u + v;
+			    u /= k;
+			    v /= k;
+			    w = 0.0f;
+			    printf("rescale %f %f %f\n", u, v, w);
+		    }
 
         sampTexData[i + j*nGrid + d*nGrid*nGrid] = make_float4(u, v, ord, 0);
       }
@@ -316,19 +290,11 @@ void DCEL::genSampTex() {
 
 // allocate and initialize DCEL data
 void DCEL::devInit(int blkDim1d, int blkDim2d) {
-  // get the vertex count
-  nVtx = vList.size();
-  nHe = heFaces.size();
-  nFace = triList.size();
-
-
   printf("uploading mesh data\n");
   cudaMalloc((void**)&dev_vList, nVtx*sizeof(glm::vec3));
   cudaMemcpy(dev_vList, &vList[0],  nVtx*sizeof(glm::vec3), cudaMemcpyHostToDevice);
   cudaMalloc((void**)&dev_heFaces, nHe*sizeof(int4));
   cudaMemcpy(dev_heFaces, &heFaces[0], nHe*sizeof(int4), cudaMemcpyHostToDevice);
-  cudaMalloc((void**)&dev_triList, nFace*sizeof(glm::ivec3));
-  cudaMemcpy(dev_triList, &triList[0],  nFace*sizeof(glm::ivec3), cudaMemcpyHostToDevice);
 
   // populate the loops
   printf("sorting loops\n");
@@ -342,17 +308,12 @@ void DCEL::devInit(int blkDim1d, int blkDim2d) {
   dim3 blkCnt((nHe + 128 - 1) / 128);
   dim3 blkSize(128);
   kGetLoopBoundaries<<<blkCnt, blkSize>>>(nHe, dev_heLoops, dev_vBndList);
-  kSetHeRootInfo<<<blkCnt, blkSize>>>(nHe, dev_vBndList, dev_heLoops, dev_heLoops);
-  kSetHeRootInfo<<<blkCnt, blkSize>>>(nHe, dev_vBndList, dev_heFaces, dev_heLoops);
+  kGetHeRootInfo<<<blkCnt, blkSize>>>(nHe, dev_vBndList, dev_heLoops, dev_heLoops);
+  kGetHeRootInfo<<<blkCnt, blkSize>>>(nHe, dev_vBndList, dev_heFaces, dev_heLoops);
 
   // initialize the bezier patch calculator
   bezier = new Bezier<float>(8);
   cudaDeviceSynchronize();
-
-  // tesselation controls
-  nSub = 3;
-  nSubFace = nSub*nSub;
-  nSubVtx = (nSub+1)*(nSub+2)/2;
 
   // build the uv index map
   printf("creating uv index map %d\n", nSubVtx);
@@ -388,123 +349,68 @@ void DCEL::devInit(int blkDim1d, int blkDim2d) {
   genSampTex();
   cudaMalloc(&dev_samp, 3 * bezier->nGrid2 * nVtx * sizeof(float));
   cudaMalloc(&dev_coeff, 3 * bezier->nBasis2 * nVtx * sizeof(float));
-  cudaMalloc(&dev_vtxOut, nFace*nSubVtx*sizeof(glm::vec3));
 
   printf("creating edge tesselation\n");
-  int *dev_idxOut;
-  cudaMalloc(&dev_idxOut, 3 * nSubFace*nFace*sizeof(int));
+  int *dev_tessIdx;
+  size_t nBytes;
+  cudaGraphicsMapResources(1, &dev_vboTessIdx, 0);
+  cudaGraphicsResourceGetMappedPointer((void**)&dev_tessIdx, &nBytes, dev_vboTessIdx);
   blkSize.x = 64;
   blkSize.y = 16;
   blkCnt.x = (nFace + blkSize.x - 1) / blkSize.x;
   blkCnt.y = (nSubVtx + blkSize.y - 1) / blkSize.y;
-  kTessEdges<<<blkCnt, blkSize>>>(nFace, nSub, dev_iuvIdxMap, dev_idxOut);
-  idxOut = new int[3 * nSubFace*nFace];
-  cudaMemcpy(idxOut, dev_idxOut, 3 * nSubFace*nFace*sizeof(int), cudaMemcpyDeviceToHost);
-  cudaFree(dev_idxOut);
+  kTessEdges<<<blkCnt, blkSize>>>(nFace, nSub, dev_iuvIdxMap, dev_tessIdx);
+  cudaGraphicsUnmapResources(1, &dev_vboTessIdx, 0);
   checkCUDAError("kTessEdges", __LINE__);
-
-  vtxOut = new float[3*nSubVtx*nFace];
-  printf("done device prep\n");
 }
 
-void DCEL::sample() {
+float DCEL::update() {
 	cudaEvent_t start, stop;
-
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
+  cudaEventRecord(start, 0);
 
-	cudaEventRecord(start, 0);
-  //printf("sample\n");
-  //dim3 blkDim(16,64);
+  // generate mesh sample points
   dim3 blkDim(8,8,1024/64);
   dim3 blkCnt;
   blkCnt.x = (bezier->nGrid + blkDim.x - 1)/blkDim.x;
   blkCnt.y = (bezier->nGrid + blkDim.y - 1)/blkDim.y;
   blkCnt.z = (nVtx + blkDim.z - 1)/blkDim.z;
-
-  // generate points on the mesh
   kMeshSample<<<blkCnt,blkDim>>>(nVtx, bezier->nGrid, degMin,
                                 sampTexObj,
                                 dev_heLoops, dev_vBndList,
                                 dev_vList, dev_samp);
-  checkCUDAError("sample", __LINE__);
-  /*
-  printf("\n==========SAMP===============\n");
-  float *sf = new float[3 * bezier->nGrid2*nVtx];
-  cudaMemcpy(sf, dev_samp, 3 * bezier->nGrid2*nVtx * sizeof(float), cudaMemcpyDeviceToHost);
-  for (int i = 0; i < nVtx; i++) {
-	  for (int j = 0; j < bezier->nGrid2; j++) {
-		  printf("%f %f %f\n", sf[j + bezier->nGrid2*i], sf[j + bezier->nGrid2*i + bezier->nGrid2*nVtx], sf[j + bezier->nGrid2*i + 2 * bezier->nGrid2*nVtx]);
-	  }
-	  printf("\n");
-  }
-  printf("\n");
-  delete sf;
-  */
+  checkCUDAError("kMeshSample", __LINE__);
 
   // least-squares project each dimension
   bezier->getCoeff(nVtx, dev_samp, dev_coeff);
-  /*printf("\n==========COEFF===============\n");
-  sf = new float[3*bezier->nBasis2*nVtx];
-  cudaMemcpy(sf, dev_coeff, 3 * bezier->nBasis2*nVtx * sizeof(float), cudaMemcpyDeviceToHost);
-  for (int i = 0; i < 3 * bezier->nBasis2*nVtx; i++)
-	  printf("%f ", sf[i]);
-  printf("\n\n");*/
+  checkCUDAError("getCoeff", __LINE__);
 
+  // calculate new vertex positions
+  size_t nBytes;
+  float *dev_tessVtx;
+  cudaGraphicsMapResources(1, &dev_vboTessVtx, 0);
+  cudaGraphicsResourceGetMappedPointer((void**)&dev_tessVtx, &nBytes, dev_vboTessVtx);
   blkDim.x = 128;
   blkDim.y = 8;
   blkDim.z = 1;
   blkCnt.x = (nFace + blkDim.x - 1) / blkDim.x;
   blkCnt.y = (nSubVtx + blkDim.y - 1) / blkDim.y;
   blkCnt.z = 1;
-  cudaMemset(dev_vtxOut, 0, 3*nFace*nSubVtx*sizeof(float));
+  cudaMemset(dev_tessVtx, 0, 3*nFace*nSubVtx*sizeof(float));
   kTessVtx<<<blkCnt, blkDim>>>(nVtx, nFace, nSub, nSubVtx, bezier->nBasis2, degMin,
-                               dev_heFaces, dev_bezPatch, dev_coeff, dev_iuvIdxMap, dev_vtxOut);
+                               dev_heFaces, dev_bezPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx);
   checkCUDAError("kTessVtx", __LINE__);
-  cudaMemcpy(vtxOut, dev_vtxOut, 3*nFace * nSubVtx * sizeof(float), cudaMemcpyDeviceToHost);
+  cudaGraphicsUnmapResources(1, &dev_vboTessVtx, 0);
 
-
+  float dt;
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
-  float dt;
   cudaEventElapsedTime(&dt, start, stop);
-  printf("cuda dt = %f ms\n", dt);
-
   cudaEventDestroy(start);
   cudaEventDestroy(stop);
-  //for (int i = 0; i <  nFace * nSubVtx; i++)
-//	  printf("(%f %f %f)\n", vtxOut[3 * i], vtxOut[3 * i+1], vtxOut[3 * i+2]);
-  //printf("\n\n");
 
-  /*
-  blkDim.x = 32;
-  blkDim.y = 1;
-  blkDim.z = 1;
-  blkCnt.x = (nHe*nSubVtx + blkDim.x - 1) / blkDim.x;
-  blkCnt.y = 1;
-  blkCnt.z = 1;
-  int nTessSM = (bezier->nBasis2 + 1) * blkDim.x * sizeof(float);
-  kHeVtx<<<blkCnt,blkDim,nTessSM>>>(nVtx, nHe, nSubVtx, bezier->nBasis2,
-                                              dev_heList, dev_tessBez, dev_coeff, dev_tessAllVtx);
-  checkCUDAError("kHeVtx", __LINE__);
-
-  blkDim.x = 128;
-  blkDim.y = 8;
-  blkCnt.x = (nHe + blkDim.x - 1) / blkDim.x;
-  blkCnt.y = (nSubVtx + blkDim.y - 1) / blkDim.y;
-  cudaMemset(dev_tessVtx, 0, 3*nFace*nSubVtx*sizeof(float));
-  cudaMemset(dev_tessWgt, 0, nFace*nSubVtx*sizeof(float));
-  kTessVtx<<<blkCnt,blkDim>>>(nHe, nSubVtx, dev_heList, dev_vBndList, dev_tessXY, dev_tessAllVtx, dev_tessVtx, dev_tessWgt);
-  checkCUDAError("kTessVtx", __LINE__);
-
-  blkCnt.x = (nFace + blkDim.x - 1) / blkDim.x;
-  kTessVtxWgt<<<blkCnt,blkDim>>>(nFace, nSubVtx, dev_tessVtx, dev_tessWgt);
-  cudaMemcpy(tessVtx, dev_tessVtx, 3*nFace*nSubVtx*sizeof(float), cudaMemcpyDeviceToHost);
-  checkCUDAError("kTessVtxWgt", __LINE__);
-  */
-
-  //glBindBuffer(GL_ARRAY_BUFFER, vboVtxList);
-  //glBufferData(GL_ARRAY_BUFFER, 3*vCnt*sizeof(float), vboVtxListBuf, GL_STATIC_DRAW);
+  return dt;
 }
 
 // free dcel data
@@ -516,39 +422,4 @@ void DCEL::devFree() {
   delete bezier;
   cudaFree(dev_vList);
   cudaFree(dev_vBndList);
-}
-
-void DCEL::visUpdate() {
-  //size_t num_bytes;
-  //float4 *dev_vtx;
-  //cudaGraphicsMapResources(1, &cuVtxResource, 0);
-  //cudaGraphicsResourceGetMappedPointer((void**)&dev_vtx,
-  //                                       &num_bytes,
-  //                                       cuVtxResource);
-
-  /*
-  int heCnt = heList.size();
-  int blkSz = 1024;
-  dim3 blkCnt((heCnt + blkSz - 1)/blkSz);
-  kernFindHeTriangles<<<blkCnt, blkSize>>>(heCnt, dev_vList, dev_heList, dev_heVtxList);
-  cudaMemcpy(&triList[0], dev_triList,  F*sizeof(glm::ivec3), cudaMemcpyDeviceToHost);
-  */
-
-  sample();
-  cudaDeviceSynchronize();
-
-  /*
-  cudaMemcpy(&vList[0], vList, vCount*sizeof(glm::vec3), cudaMemcpyDeviceToHost);
-  for(int i = 0; i < vList.size(); i++)
-    memcpy(&vboData[6*i], &vList[i], 3*sizeof(float));
-  checkCUDAError("download", __LINE__);
-
-  glBindBuffer(GL_ARRAY_BUFFER, vboVtx);
-  glBufferData(GL_ARRAY_BUFFER, 3*vList.size()*sizeof(float), vboVtxData, GL_STATIC_DRAW);
-
-  cudaThreadSynchronize();
-  checkCUDAError("sync", __LINE__);
-  */
-
-  //cudaGraphicsUnmapResources(1, &cuVtxResource, 0);
 }

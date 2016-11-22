@@ -3,6 +3,7 @@
 
 #include "util/lapack.hpp"
 #include "util/math.hpp"
+#include "util/error.hpp"
 
 #include <cstdio>
 
@@ -11,19 +12,22 @@
 #include <GL/gl.h>
 
 #include <cuda_runtime.h>
-#include <cuda_gl_interop.h>
 
 #include "dcel.hpp"
 
-// utility to fetch cuda errors and fail
-void checkCUDAError(const char *msg, int line = -1) {
-  cudaError_t err = cudaGetLastError();
-  if (cudaSuccess != err) {
-    if (line >= 0) {
-      fprintf(stderr, "Line %d: ", line);
+template <typename T, typename T2 = typename LA<T>::T2, typename T4 = typename LA<T>::T4 >
+__device__ void kBnBasis(int nBasis, const T2 &p, const T2 &np, T2 *work) {
+  for (int k = 0; k < nBasis - 1; k++)
+    work[k].x = work[k].y = T(0);
+  work[nBasis - 1].x = work[nBasis - 1].y = T(1);
+
+  for (int off = nBasis - 2; off >= 0; off--) {
+    for (int k = off; k < nBasis - 1; k++) {
+      work[k].x = work[k].x*p.x + work[k + 1].x*np.x;
+      work[k].y = work[k].y*p.y + work[k + 1].y*np.y;
     }
-    fprintf(stderr, "Cuda error: %s: %s.\n", msg, cudaGetErrorString(err));
-    exit(EXIT_FAILURE);
+    work[nBasis - 1].x = p.x*work[nBasis - 1].x;
+    work[nBasis - 1].y = p.y*work[nBasis - 1].y;
   }
 }
 
@@ -31,27 +35,16 @@ void checkCUDAError(const char *msg, int line = -1) {
 // work: M*M columns, N rows to evaluate bernstein polynomials
 //       via de casteljau for N evenly spaced control points
 template <typename T, typename T2=typename LA<T>::T2, typename T4=typename LA<T>::T4 >
-__global__ void kernCalcBFunc(int nGrid2, const T4 *gridUVXY, int nBasis, T2 *basis) {
+__global__ void kernCalcBFunc(int nGrid2, const T2 *gridXY, int nBasis, T2 *basis) {
   int i = blockIdx.x * blockDim.x + threadIdx.x; // grid index
   if (i >= nGrid2)
     return;
 
   // convert control point index to parameter
-  const T4 &p = gridUVXY[i];
-  T2 xy = T(0.5)*LA<T>::mkPair(p.z+T(1), p.w+T(1));
-  T2 *work = &basis[i*nBasis];
-  for (int k = 0; k < nBasis-1; k++)
-    work[k].x = work[k].y = T(0);
-  work[nBasis-1].x = work[nBasis-1].y = T(1);
-
-  for (int off = nBasis-2; off >= 0; off--) {
-    for (int k = off; k < nBasis-1; k++) {
-      work[k].x = work[k].x*xy.x + work[k+1].x*(T(1) - xy.x);
-      work[k].y = work[k].y*xy.y + work[k+1].y*(T(1) - xy.y);
-    }
-    work[nBasis-1].x = xy.x*work[nBasis-1].x;
-    work[nBasis-1].y = xy.y*work[nBasis-1].y;
-  }
+  const T2 &p = gridXY[i];
+  T2 xy = T(0.5)*LA<T>::mkPair(p.x + T(1), p.y + T(1));
+  T2 np = T(1) - xy;
+  kBnBasis<T>(nBasis, xy, np, &basis[i*nBasis]);
 }
 
 template <typename T, typename T2=typename LA<T>::T2, typename T4=typename LA<T>::T4 >
@@ -78,7 +71,7 @@ struct Bezier {
     T *U, *VT, *S;
     T *dev_LLS_proj;
     T *dev_coeff;
-    T4 *dev_gridUVXY;
+    T2 *dev_grid;
 
     void free();
     void getCoeff(int nSamp, T *dev_samp, T *dev_coeff);
@@ -90,7 +83,6 @@ struct Bezier {
   private:
 
     cublasHandle_t handle;
-    std::vector<T4> pGridXYVW;
 
     int svd(T *A); // svd(A) -> U,S,V
     void mkLLSProj(); // create the projection matrix dev_LLS_proj
@@ -126,26 +118,16 @@ Bezier<T>::Bezier(int vDeg) : vDeg(vDeg) {
 
 template  <typename T>
 void Bezier<T>::mkGrid() {
-  std::vector<T4> uvxys;
+  std::vector<T2> xys;
   for (int j = 0; j < nGrid; j++) {
   for (int i = 0; i < nGrid; i++) {
     T x(2 * i - nGrid + 1); x /= nGrid - 1;
     T y(2 * j - nGrid + 1); y /= nGrid - 1;
 
-    T alpha(2.0*M_PI/vDeg), th = ((y < 0) ? 2.0*M_PI : 0) + atan2(y,x), r = hypot(x,y);
-    T dTh = fmod(th, alpha);
-
-    T4 uvxy;
-    // u + v*cos(alpha) = r*cos(dTh)
-    // v*sin(alpha) = r*sin(dTh)
-    uvxy.y = r*sin(dTh)/sin(alpha);
-    uvxy.x = r*cos(dTh) - uvxy.y*cos(alpha);
-    uvxy.z = x;
-    uvxy.w = y;
-    uvxys.push_back(uvxy);
+    xys.push_back(LA<T>::mkPair(x,y));
   }}
-  cudaMalloc((void**)&dev_gridUVXY, nGrid2*sizeof(T4));
-  cudaMemcpy(dev_gridUVXY, &uvxys[0], nGrid2*sizeof(T4), cudaMemcpyHostToDevice);
+  cudaMalloc((void**)&dev_grid, nGrid2*sizeof(T2));
+  cudaMemcpy(dev_grid, &xys[0], nGrid2*sizeof(T2), cudaMemcpyHostToDevice);
 }
 
 template <typename T>
@@ -195,7 +177,7 @@ T *Bezier<T>::mkBasis(int sz1, int sz2) {
 
   dim3 blkCnt1((nGrid2+sz1-1)/sz1);
   dim3 blkSz1(sz1);
-  kernCalcBFunc<T><<<blkCnt1, blkSz1>>>(nGrid2,dev_gridUVXY,nBasis,dev_basis);
+  kernCalcBFunc<T><<<blkCnt1, blkSz1>>>(nGrid2,dev_grid,nBasis,dev_basis);
   checkCUDAError("kernCalcBFunc\n");
 
   T *dev_A;

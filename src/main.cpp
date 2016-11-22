@@ -88,11 +88,9 @@ int main(int argc, char *argv[]) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     /* TODO: draw things here */
-    double t1 = glfwGetTime();
-    dcel.visUpdate();
-    double t2 = glfwGetTime();
-    dcel.visDraw(shader, ppmShader);
-    dt = (t2-t1)*(1.0-alpha) + dt*alpha;
+    float uTime = dcel.update();
+    dcel.draw(shader, ppmShader);
+    dt = uTime*(1.0-alpha) + dt*alpha;
 
     // Move the rendering we just made onto the screen
     glfwSwapBuffers(window);
@@ -101,7 +99,7 @@ int main(int argc, char *argv[]) {
     double currentTime = glfwGetTime();
     nbFrames++;
     if (currentTime - lastTime >= 1.0){
-       printf("%.1f fps (dt = %f us)\n", double(nbFrames)/(currentTime - lastTime), 1.0E6*dt/CLOCKS_PER_SEC);
+       printf("%.1f fps (dt = %.1f ms)\n", double(nbFrames)/(currentTime - lastTime), dt);
        nbFrames = 0;
        lastTime += 1.0;
     }

@@ -1,5 +1,6 @@
 #include "dcel.hpp"
 #include "shader.hpp"
+#include "util/error.hpp"
 
 #include <GL/glew.h>
 #include <GL/glu.h>
@@ -19,11 +20,12 @@
 DCEL::DCEL(const char *fName) {
   objRead(fName);
   printf("read done\n");
-  printf("loop sort done\n");
-  devInit();
-  printf("dev done\n");
+
   visInit();
   printf("vis done\n");
+
+  devInit();
+  printf("dev done\n");
 
   cudaDeviceSynchronize();
 }
@@ -122,14 +124,6 @@ bool DCEL::objReadFace(std::istream &fStream) {
     return false;
   }
 
-  glm::ivec3 tri;
-  int fCnt = fList.size() / 3;
-  for (int i = 0; i < 3; i++) {
-    tri[i] = vIdxList[i] - 1;
-    fList.push_back(tri[i]);
-  }
-  triList.push_back(tri);
-
   int4 he;
 
   he = make_int4(vIdxList[0]-1, vIdxList[1]-1, 0, 0);
@@ -177,52 +171,59 @@ void DCEL::objRead(const char *fName) {
     if (v.x < 0 || v.x >= N || v.y < 0 || v.y >= N)
       throw std::logic_error("DCEL: invalid vertex");
   }
+
+  // get the vertex count
+  nVtx = vList.size();
+  nHe = heFaces.size();
+  nFace = nHe / 3;
+
+  // tesselation controls
+  nSub = 3;
+  nSubFace = nSub*nSub;
+  nSubVtx = (nSub + 1)*(nSub + 2) / 2;
 }
 
 void DCEL::visInit() {
-  glGenBuffers(1, &vboVtxList); // vList.size() vertices (3 floats)
+  glGenBuffers(1, &vboVtx); // vList.size() vertices (3 floats)
   glGenBuffers(1, &vboIdx); // fList.size() indices (1 int)
-  //cudaGraphicsGLRegisterBuffer(&cuVtxResource, vboData, cudaGraphicsMapFlagsNone);
-
-  int vCnt = vList.size();
-  int fIdxCnt = fList.size();
+  glGenBuffers(1, &vboTessVtx); // vList.size() vertices (3 floats)
+  glGenBuffers(1, &vboTessIdx); // fList.size() indices (1 int)
 
   printf("loading vtx vbo\n");
-  vboVtxListBuf = new float[3*vCnt];
-  for(int i = 0; i < vCnt; i++)
-    memcpy(&vboVtxListBuf[3*i], glm::value_ptr(vList[i]), 3*sizeof(float));
-  glBindBuffer(GL_ARRAY_BUFFER, vboVtxList);
-  glBufferData(GL_ARRAY_BUFFER, 3*vCnt*sizeof(float), vboVtxListBuf, GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, vboVtx);
+  glBufferData(GL_ARRAY_BUFFER, 3 * nVtx*sizeof(float), &vList[0], GL_STATIC_DRAW);
 
   printf("loading fidx vbo\n");
   glBindBuffer(GL_ARRAY_BUFFER, vboIdx);
-  glBufferData(GL_ARRAY_BUFFER, fIdxCnt*sizeof(int), &fList[0], GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, 3 * nFace*sizeof(int), &fList[0], GL_STATIC_DRAW);
+
+  printf("loading vtx tess vbo\n");
+  glBindBuffer(GL_ARRAY_BUFFER, vboTessVtx);
+  glBufferData(GL_ARRAY_BUFFER, 3 * nFace * nSubVtx * sizeof(float), 0, GL_STATIC_DRAW);
+  cudaGraphicsGLRegisterBuffer(&dev_vboTessVtx, vboTessVtx, cudaGraphicsMapFlagsNone);
+  checkCUDAError("cudaGraphicsGLRegisterBuffer", __LINE__);
+
+  printf("loading fidx tess vbo\n");
+  glBindBuffer(GL_ARRAY_BUFFER, vboTessIdx);
+  glBufferData(GL_ARRAY_BUFFER, 3 * nFace * nSubFace * sizeof(int), 0, GL_STATIC_DRAW);
+  cudaGraphicsGLRegisterBuffer(&dev_vboTessIdx, vboTessIdx, cudaGraphicsMapFlagsNone);
+  checkCUDAError("cudaGraphicsGLRegisterBuffer", __LINE__);
 }
 
-void DCEL::visDraw(Shader *vShader, Shader *tShader) {
-  glPointSize(3.0f);
-
-  glBindBuffer(GL_ARRAY_BUFFER, vboVtxList);
-  glBufferData(GL_ARRAY_BUFFER, 3*nVtx*sizeof(float), vboVtxListBuf, GL_STATIC_DRAW);
-  glBindBuffer(GL_ARRAY_BUFFER, vboIdx);
-  glBufferData(GL_ARRAY_BUFFER, 3*nFace*sizeof(int), &fList[0], GL_STATIC_DRAW);
-
+void DCEL::draw(Shader *vShader, Shader *tShader) {
+  glPointSize(1.0f);
   glLineWidth(3.0f);
   vShader->setUniform("uColor", 1.0f, 0.0f, 0.0f);
-  vShader->bindVertexData("Position", vboVtxList, SHADER_SSO(3,3,0));
+  vShader->bindVertexData("Position", vboVtx, SHADER_SSO(3,3,0));
   vShader->bindIndexData(vboIdx);
   glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
   glDrawElements(GL_TRIANGLES, 3*nFace, GL_UNSIGNED_INT, 0);
 
-  glBindBuffer(GL_ARRAY_BUFFER, vboVtxList);
-  glBufferData(GL_ARRAY_BUFFER, 3*nFace*nSubVtx*sizeof(float), vtxOut, GL_STATIC_DRAW);
-  glBindBuffer(GL_ARRAY_BUFFER, vboIdx);
-  glBufferData(GL_ARRAY_BUFFER, 3*nFace*nSubFace*sizeof(int), idxOut, GL_STATIC_DRAW);
-
+  glPointSize(3.0f);
   glLineWidth(1.0f);
   vShader->setUniform("uColor", 0.0f, 1.0f, 0.0f);
-  vShader->bindVertexData("Position", vboVtxList, SHADER_SSO(3,3,0));
-  vShader->bindIndexData(vboIdx);
+  vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3,3,0));
+  vShader->bindIndexData(vboTessIdx);
   glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
   glDrawElements(GL_TRIANGLES, 3*nFace*nSubFace, GL_UNSIGNED_INT, 0);
   glDrawElements(GL_POINTS, 3*nFace*nSubFace, GL_UNSIGNED_INT, 0);
@@ -230,9 +231,12 @@ void DCEL::visDraw(Shader *vShader, Shader *tShader) {
 
 
 void DCEL::visFree() {
-  delete vboVtxListBuf;
-  glDeleteBuffers(1,&vboVtxList); // vList.size() vertices (3 floats)
+  glDeleteBuffers(1,&vboVtx); // vList.size() vertices (3 floats)
   glDeleteBuffers(1,&vboIdx); // vList.size() vertices (3 floats)
+  cudaGraphicsUnregisterResource(dev_vboTessIdx);
+  cudaGraphicsUnregisterResource(dev_vboTessVtx);
+  glDeleteBuffers(1, &vboTessVtx); // vList.size() vertices (3 floats)
+  glDeleteBuffers(1, &vboTessIdx); // vList.size() vertices (3 floats)
 }
 
 
