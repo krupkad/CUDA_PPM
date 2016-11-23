@@ -31,10 +31,20 @@ class DCEL {
     float update();
     void draw(Shader *vShader, Shader *tShader);
 
+    // visualization options
+    bool visSkel;
+    bool visFill;
+
+    // optimization options
+    bool useTessSM;
+    bool useSampTex;
+    bool useSvdUpdate;
+
   private:
     // host data
     std::vector<glm::vec3> vList;
     std::vector<int> fList;
+
     std::vector<int4> heFaces, heLoops;
     std::vector<int2> vBndList;
     std::unordered_map<int, std::vector<int>> loopMap;
@@ -48,6 +58,9 @@ class DCEL {
     float2 *dev_bezPatch;
     float2 *dev_uvIdxMap;
 	  int2 *dev_iuvIdxMap;
+    float *dev_tessWgt;
+
+    float *dev_dv;
 
     // sampling texture
     cudaArray *dev_sampTexArray;

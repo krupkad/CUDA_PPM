@@ -7,10 +7,6 @@
 
 #include <cstdio>
 
-#include <GL/glew.h>
-#include <GL/glu.h>
-#include <GL/gl.h>
-
 #include <cuda_runtime.h>
 
 #include "dcel.hpp"
@@ -66,18 +62,21 @@ struct Bezier {
     typedef typename LA<T>::T2 T2;
     typedef typename LA<T>::T4 T4;
 
-    int vDeg, nGrid, nBasis, nGrid2, nBasis2;
+    int nGrid, nBasis, nGrid2, nBasis2;
+    cudaTextureObject_t texObj;
 
     T *U, *VT, *S;
+    T *dev_V;
     T *dev_LLS_proj;
     T *dev_coeff;
     T2 *dev_grid;
 
     void free();
     void getCoeff(int nSamp, T *dev_samp, T *dev_coeff);
+    void updateCoeff(int nSamp, T *dev_coeff, T* dev_dv);
     void mkGrid();
 
-    Bezier(int vDeg);
+    Bezier(int nBasis, int nGrid);
     ~Bezier();
 
   private:
@@ -85,19 +84,20 @@ struct Bezier {
     cublasHandle_t handle;
 
     int svd(T *A); // svd(A) -> U,S,V
+    void genSvdTex(int N);
     void mkLLSProj(); // create the projection matrix dev_LLS_proj
     T *mkBasis(int sz1, int sz2); // create the bernstein matrix
+
+    // coefficient texture data
+    cudaArray *dev_texArray;
 };
 
 template <typename T>
-Bezier<T>::Bezier(int vDeg) : vDeg(vDeg) {
+Bezier<T>::Bezier(int nBasis, int nGrid) : nBasis(nBasis), nGrid(nGrid) {
   cublasCreate(&handle);
-  printf("created handle\n");
+  printf("created cublas handle\n"); 
 
-
-  nBasis = 1 + ((vDeg > 3) ? vDeg : 3);
   nBasis2 = nBasis*nBasis;
-  nGrid = 2*nBasis;
   nGrid2 = nGrid*nGrid;
 
   mkGrid();
@@ -112,6 +112,9 @@ Bezier<T>::Bezier(int vDeg) : vDeg(vDeg) {
 
   mkLLSProj();
   printf("created LLS matrix\n");
+
+  genSvdTex(10);
+  printf("generate SVD textures\n");
 
   cudaDeviceSynchronize();
 }
@@ -171,6 +174,12 @@ void Bezier<T>::getCoeff(int nSamp, T *dev_samp, T *dev_coeff) {
 }
 
 template <typename T>
+void Bezier<T>::updateCoeff(int nSamp, T *dev_coeff, T* dev_dv) {
+  LA<T>::ger(handle, nBasis2, 3 * nSamp,
+    &S[0], dev_V, 1, dev_dv, 1, dev_coeff, nBasis2);
+}
+
+template <typename T>
 T *Bezier<T>::mkBasis(int sz1, int sz2) {
   T2 *dev_basis;
   cudaMalloc((void**)&dev_basis, nGrid2*nBasis*sizeof(T2));
@@ -221,8 +230,63 @@ int Bezier<T>::svd(T *A) {
   delete work;
   delete iwork;
 
+  // create layered texture to sample right singular vectors
+
   return ret;
 }
+
+
+// generate bernstein eigencoefficient textures
+template <typename T>
+void Bezier<T>::genSvdTex(int N) {
+  float *texData = new T[nBasis * nBasis * N];
+  for (int k = 0; k < N; k++) {
+    for (int j = 0; j < nBasis; j++) {
+      for (int i = 0; i < nBasis; i++) {
+        texData[i + nBasis*j + nBasis2*k] = VT[j + nBasis*i + nBasis2*k];
+      }
+    }
+  }
+
+  cudaMalloc(&dev_V, nBasis2*nBasis2*sizeof(float));
+  cudaMemcpy(dev_V, texData, nBasis2*N*sizeof(float), cudaMemcpyHostToDevice);
+
+  printf("allocating texture memory\n");
+  dev_texArray = nullptr;
+  cudaChannelFormatDesc channel = cudaCreateChannelDesc<float>();
+  cudaMalloc3DArray(&dev_texArray, &channel,
+    make_cudaExtent(nBasis, nBasis, N), cudaArrayLayered);
+  checkCUDAError("cudaMalloc3DArray", __LINE__);
+
+  cudaMemcpy3DParms cpyParms = { 0 };
+  cpyParms.srcPos = make_cudaPos(0, 0, 0);
+  cpyParms.dstPos = make_cudaPos(0, 0, 0);
+  cpyParms.srcPtr = make_cudaPitchedPtr(texData, nBasis*sizeof(float), nBasis, nBasis);
+  cpyParms.dstArray = dev_texArray;
+  cpyParms.extent = make_cudaExtent(nBasis, nBasis, N);
+  cpyParms.kind = cudaMemcpyHostToDevice;
+  cudaMemcpy3D(&cpyParms);
+  delete texData;
+  checkCUDAError("cudaMemcpy3D", __LINE__);
+
+  printf("creating texture\n");
+  cudaResourceDesc resDesc;
+  memset(&resDesc, 0, sizeof resDesc);
+  resDesc.resType = cudaResourceTypeArray;
+  resDesc.res.array.array = dev_texArray;
+
+  cudaTextureDesc texDesc;
+  memset(&texDesc, 0, sizeof texDesc);
+  texDesc.addressMode[0] = cudaAddressModeClamp;
+  texDesc.addressMode[1] = cudaAddressModeClamp;
+  texDesc.filterMode = cudaFilterModePoint;
+  texDesc.readMode = cudaReadModeElementType;
+  texDesc.normalizedCoords = 0;
+
+  cudaCreateTextureObject(&texObj, &resDesc, &texDesc, nullptr);
+  checkCUDAError("cudaCreateTextureObject", __LINE__);
+}
+
 
 template <typename T>
 void Bezier<T>::mkLLSProj() {

@@ -25,7 +25,9 @@ float fovy = (float) (M_PI / 4), zNear = 0.10f, zFar = 100.0f;
 float theta = 1.22f, phi = -0.70f, zoom = 5.0f;
 glm::vec3 camPos;
 glm::mat4 projection;
-Shader *shader, *ppmShader;
+Shader *shader;
+
+DCEL *dcel;
 
 int main(int argc, char *argv[]) {
   if (argc < 2) {
@@ -64,7 +66,7 @@ int main(int argc, char *argv[]) {
   glfwSetScrollCallback(window, scrollCallback);
 
   //create the dcel
-  DCEL dcel(argv[1]);
+  dcel = new DCEL(argv[1]);
   printf("created dcel\n");
 
   //create our shader
@@ -74,22 +76,19 @@ int main(int argc, char *argv[]) {
   shader->recompile();
   printGLErrorLog();
 
-  //create our tesselation shader
-  ppmShader = new Shader();
-
   printf("begin main loop\n");
   int nbFrames = 0;
   double lastTime = glfwGetTime();
   updateCamera();
-  double dt = 0, alpha = .95;
+  double dt = 0, alpha = .98;
   while(!glfwWindowShouldClose(window)) {
     // Clear the screen so that we only see newly drawn images
     // glfwSetCursorPos(window, xSize/2, ySize/2);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     /* TODO: draw things here */
-    float uTime = dcel.update();
-    dcel.draw(shader, ppmShader);
+    float uTime = dcel->update();
+    dcel->draw(shader, nullptr);
     dt = uTime*(1.0-alpha) + dt*alpha;
 
     // Move the rendering we just made onto the screen
@@ -99,7 +98,7 @@ int main(int argc, char *argv[]) {
     double currentTime = glfwGetTime();
     nbFrames++;
     if (currentTime - lastTime >= 1.0){
-       printf("%.1f fps (dt = %.1f ms)\n", double(nbFrames)/(currentTime - lastTime), dt);
+       printf("%.1f fps (dt = %.3g us)\n", double(nbFrames)/(currentTime - lastTime), 1000.0*dt);
        nbFrames = 0;
        lastTime += 1.0;
     }
@@ -111,7 +110,7 @@ int main(int argc, char *argv[]) {
   glfwDestroyWindow(window);
   glfwTerminate();
   delete shader;
-  delete ppmShader;
+  delete dcel;
 
   return 0;
 }
@@ -131,6 +130,21 @@ void errorCallback(int error, const char *description) {
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
   if (key == GLFW_KEY_Q && action == GLFW_PRESS) {
     glfwSetWindowShouldClose(window, GL_TRUE);
+  }
+  if (key == GLFW_KEY_F && action == GLFW_PRESS) {
+    dcel->visFill = !dcel->visFill;
+  }
+  if (key == GLFW_KEY_S && action == GLFW_PRESS) {
+    dcel->visSkel = !dcel->visSkel;
+  }
+  if (key == GLFW_KEY_1 && action == GLFW_PRESS) {
+    dcel->useTessSM = !dcel->useTessSM;
+  }
+  if (key == GLFW_KEY_2 && action == GLFW_PRESS) {
+    dcel->useSampTex = !dcel->useSampTex;
+  }
+  if (key == GLFW_KEY_3 && action == GLFW_PRESS) {
+    dcel->useSvdUpdate = !dcel->useSvdUpdate;
   }
 }
 

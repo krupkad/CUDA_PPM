@@ -17,7 +17,11 @@
 #include <algorithm>
 
 
-DCEL::DCEL(const char *fName) {
+DCEL::DCEL(const char *fName) :
+  useTessSM(true),
+  useSampTex(true),
+  useSvdUpdate(true)
+{
   objRead(fName);
   printf("read done\n");
 
@@ -26,6 +30,7 @@ DCEL::DCEL(const char *fName) {
 
   devInit();
   printf("dev done\n");
+
 
   cudaDeviceSynchronize();
 }
@@ -127,14 +132,17 @@ bool DCEL::objReadFace(std::istream &fStream) {
   int4 he;
 
   he = make_int4(vIdxList[0]-1, vIdxList[1]-1, 0, 0);
+  fList.push_back(vIdxList[0] - 1);
   loopMap[vIdxList[2]-1].push_back(heFaces.size());
   heFaces.push_back(he);
 
-  he = make_int4(vIdxList[1]-1, vIdxList[2]-1, 0, 0);
+  he = make_int4(vIdxList[1] - 1, vIdxList[2] - 1, 0, 0);
+  fList.push_back(vIdxList[1] - 1);
   loopMap[vIdxList[0]-1].push_back(heFaces.size());
   heFaces.push_back(he);
 
-  he = make_int4(vIdxList[2]-1, vIdxList[0]-1, 0, 0);
+  he = make_int4(vIdxList[2] - 1, vIdxList[0] - 1, 0, 0);
+  fList.push_back(vIdxList[2] - 1);
   loopMap[vIdxList[1]-1].push_back(heFaces.size());
   heFaces.push_back(he);
 
@@ -208,25 +216,40 @@ void DCEL::visInit() {
   glBufferData(GL_ARRAY_BUFFER, 3 * nFace * nSubFace * sizeof(int), 0, GL_STATIC_DRAW);
   cudaGraphicsGLRegisterBuffer(&dev_vboTessIdx, vboTessIdx, cudaGraphicsMapFlagsNone);
   checkCUDAError("cudaGraphicsGLRegisterBuffer", __LINE__);
+
+  visFill = false;
+  visSkel = true;
 }
 
 void DCEL::draw(Shader *vShader, Shader *tShader) {
-  glPointSize(1.0f);
-  glLineWidth(3.0f);
-  vShader->setUniform("uColor", 1.0f, 0.0f, 0.0f);
-  vShader->bindVertexData("Position", vboVtx, SHADER_SSO(3,3,0));
-  vShader->bindIndexData(vboIdx);
-  glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-  glDrawElements(GL_TRIANGLES, 3*nFace, GL_UNSIGNED_INT, 0);
+	if (visSkel) {
+	  glPointSize(1.0f);
+	  glLineWidth(2.0f);
+	  vShader->setUniform("uColor", 0.8f, 0.2f, 0.1f);
+	  vShader->bindVertexData("Position", vboVtx, SHADER_SSO(3,3,0));
+	  vShader->bindIndexData(vboIdx);
+	  glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+	  glDrawElements(GL_TRIANGLES, 3 * nFace, GL_UNSIGNED_INT, 0);
+	}
 
   glPointSize(3.0f);
   glLineWidth(1.0f);
-  vShader->setUniform("uColor", 0.0f, 1.0f, 0.0f);
+  vShader->setUniform("uColor", 0.3, 0.6f, 0.0f);
   vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3,3,0));
   vShader->bindIndexData(vboTessIdx);
   glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
   glDrawElements(GL_TRIANGLES, 3*nFace*nSubFace, GL_UNSIGNED_INT, 0);
   glDrawElements(GL_POINTS, 3*nFace*nSubFace, GL_UNSIGNED_INT, 0);
+
+  if (visFill) {
+    glPointSize(3.0f);
+    glLineWidth(1.0f);
+    vShader->setUniform("uColor", 0.3, 0.3f, 0.3f);
+    vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3, 3, 0));
+    vShader->bindIndexData(vboTessIdx);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glDrawElements(GL_TRIANGLES, 3 * nFace*nSubFace, GL_UNSIGNED_INT, 0);
+  }
 }
 
 

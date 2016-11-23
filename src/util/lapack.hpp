@@ -20,6 +20,7 @@ struct LA<float> {
   LA_DECL_PTR(geam, cublasSgeam);
   LA_DECL_PTR(gesdd, sgesdd_);
   LA_DECL_PTR(dgmm, cublasSdgmm);
+  LA_DECL_PTR(ger, cublasSger);
   LA_DECL(zero, 0.0f);
   LA_DECL(one, 1.0f);
   typedef float2 T2;
@@ -33,6 +34,7 @@ LA_DEFN_PTR(LA<float>::gemm, cublasSgemm);
 LA_DEFN_PTR(LA<float>::geam, cublasSgeam);
 LA_DEFN_PTR(LA<float>::gesdd, sgesdd_);
 LA_DEFN_PTR(LA<float>::dgmm, cublasSdgmm);
+LA_DEFN_PTR(LA<float>::ger, cublasSger);
 LA_DEFN(LA<float>::zero, 0.0f);
 LA_DEFN(LA<float>::one, 1.0f);
 
@@ -42,6 +44,7 @@ struct LA<double> {
   LA_DECL_PTR(geam, cublasDgeam);
   LA_DECL_PTR(gesdd, dgesdd_);
   LA_DECL_PTR(dgmm, cublasDdgmm);
+  LA_DECL_PTR(ger, cublasDger);
   LA_DECL(zero, 0.0);
   LA_DECL(one, 1.0);
   typedef double2 T2;
@@ -55,6 +58,7 @@ LA_DEFN_PTR(LA<double>::gemm, cublasDgemm);
 LA_DEFN_PTR(LA<double>::geam, cublasDgeam);
 LA_DEFN_PTR(LA<double>::gesdd, dgesdd_);
 LA_DEFN_PTR(LA<double>::dgmm, cublasDdgmm);
+LA_DEFN_PTR(LA<double>::ger, cublasDger);
 LA_DEFN(LA<double>::zero, 0.0);
 LA_DEFN(LA<double>::one, 1.0);
 
