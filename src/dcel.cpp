@@ -9,8 +9,6 @@
 #include <cuda_runtime.h>
 #include <cuda_gl_interop.h>
 
-#include "glm/gtc/type_ptr.hpp"
-
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
@@ -19,6 +17,7 @@
 
 DCEL::DCEL(const char *fName) :
   useTessSM(true),
+  useTessAltSM(true),
   useSampTex(true),
   useSvdUpdate(true)
 {
@@ -79,7 +78,7 @@ void DCEL::getHeLoops() {
   // create a halfedge list ordered by both source vertex and loop sequence
   degMin = INT_MAX;
   degMax = INT_MIN;
-  for (int v1 = 0; v1 < vList.size(); v1++) {
+  for (int v1 = 0; v1 < vList.size()/3; v1++) {
     int2 vRange;
     vRange.x = heLoops.size();
     for (int heIdx : loopMap[v1])
@@ -96,10 +95,11 @@ void DCEL::getHeLoops() {
 }
 
 bool DCEL::objReadVtx(std::istream &fStream) {
-  glm::vec3 p;
-  for (int i = 0; i < 3; i++)
-    fStream >> p[i];
-  vList.push_back(p);
+  float p;
+  for (int i = 0; i < 3; i++) {
+    fStream >> p;
+    vList.push_back(p);
+  }
 
   return true;
 }
@@ -120,7 +120,10 @@ bool DCEL::objReadFace(std::istream &fStream) {
     if (sscanf(vDesc.substr(0,tokLen).c_str(), "%d", &vIdx) < 1)
       return false;
 
-    vIdxList.push_back(vIdx);
+    if (vIdx >= 0)
+      vIdxList.push_back(vIdx);
+    else
+      vIdxList.push_back(vList.size() + vIdx + 1);
   }
   unsigned int N = vIdxList.size();
 
@@ -174,14 +177,14 @@ void DCEL::objRead(const char *fName) {
   }
 
   // check that vertex indices are valid
-  unsigned int N = vList.size();
+  unsigned int N = vList.size()/3;
   for (const int4 &v : heFaces) {
     if (v.x < 0 || v.x >= N || v.y < 0 || v.y >= N)
       throw std::logic_error("DCEL: invalid vertex");
   }
 
   // get the vertex count
-  nVtx = vList.size();
+  nVtx = vList.size()/3;
   nHe = heFaces.size();
   nFace = nHe / 3;
 

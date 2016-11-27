@@ -1,9 +1,6 @@
 #ifndef DCEL_HPP
 #define DCEL_HPP
 
-#define FORCE_GLM_CUDA
-#include "glm/glm.hpp"
-
 #define _USE_MATH_DEFINES
 #include <cmath>
 
@@ -37,19 +34,20 @@ class DCEL {
 
     // optimization options
     bool useTessSM;
+    bool useTessAltSM;
     bool useSampTex;
     bool useSvdUpdate;
 
   private:
     // host data
-    std::vector<glm::vec3> vList;
+    std::vector<float> vList;
     std::vector<int> fList;
 
     std::vector<int4> heFaces, heLoops;
     std::vector<int2> vBndList;
     std::unordered_map<int, std::vector<int>> loopMap;
 
-    glm::vec3 *dev_vList;
+    float *dev_vList;
     int2 *dev_vBndList;
 
     Bezier<float> *bezier;
@@ -57,7 +55,7 @@ class DCEL {
     float *dev_samp, *dev_coeff;
     float2 *dev_bezPatch;
     float2 *dev_uvIdxMap;
-	  int2 *dev_iuvIdxMap;
+    int2 *dev_iuvIdxMap;
     float *dev_tessWgt;
 
     float *dev_dv;
@@ -71,9 +69,9 @@ class DCEL {
     int degMin, degMax, nDeg;
 
     // GL visualization data
-	  unsigned int vboIdx, vboVtx;
-	  unsigned int vboTessIdx, vboTessVtx;
-	  cudaGraphicsResource *dev_vboTessIdx, *dev_vboTessVtx;
+	unsigned int vboIdx, vboVtx;
+	unsigned int vboTessIdx, vboTessVtx;
+	cudaGraphicsResource *dev_vboTessIdx, *dev_vboTessVtx;
 
     void objRead(const char *fName);
     bool objReadVtx(std::istream &fStream);

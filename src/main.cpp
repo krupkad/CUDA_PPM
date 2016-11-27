@@ -56,9 +56,7 @@ int main(int argc, char *argv[]) {
   glClearDepth(1.0);
   glDepthFunc(GL_LEQUAL);
 
-  //glEnable(GL_BLEND);
-  //glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
+  // set glfw callbacks
   glfwSetWindowSizeCallback(window, resizeCallback);
   glfwSetKeyCallback(window, keyCallback);
   glfwSetCursorPosCallback(window, mousePositionCallback);
@@ -141,9 +139,12 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     dcel->useTessSM = !dcel->useTessSM;
   }
   if (key == GLFW_KEY_2 && action == GLFW_PRESS) {
-    dcel->useSampTex = !dcel->useSampTex;
+    dcel->useTessAltSM = !dcel->useTessAltSM;
   }
   if (key == GLFW_KEY_3 && action == GLFW_PRESS) {
+    dcel->useSampTex = !dcel->useSampTex;
+  }
+  if (key == GLFW_KEY_4 && action == GLFW_PRESS) {
     dcel->useSvdUpdate = !dcel->useSvdUpdate;
   }
 }
