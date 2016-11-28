@@ -576,7 +576,7 @@ float DCEL::update() {
     blkCnt.z = 1;
     cudaMemset(dev_tessVtx, 0, 3 * nFace*nSubVtx*sizeof(float));
     cudaMemset(dev_tessWgt, 0, nFace*nSubVtx*sizeof(float));
-    int smSize = blkDim.x * bezier->nBasis2 * sizeof(float4);
+    int smSize = blkDim.x * (1 + bezier->nBasis2) * sizeof(float4);
     if (useTessAltSM) {
 	    kTessVtxAltSM<<<blkCnt, blkDim, smSize>>>(nVtx, nHe, nSub, nSubVtx, bezier->nBasis2, degMin,
           dev_heFaces, dev_bezPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx, dev_tessWgt);
