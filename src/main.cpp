@@ -174,15 +174,40 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
   }
   if (key == GLFW_KEY_1 && action == GLFW_PRESS) {
     dcel->useTessSM = !dcel->useTessSM;
+    if (dcel->useTessSM) {
+      dcel->useTessAltSM = 0;
+      printf("using default tessVtxSM\n");
+    } else {
+      printf("using non-SM tessVtx\n");
+    }
   }
   if (key == GLFW_KEY_2 && action == GLFW_PRESS) {
-    dcel->useTessAltSM = !dcel->useTessAltSM;
+    dcel->useTessAltSM = (dcel->useTessAltSM + 1) % 3;
+    switch(dcel->useTessAltSM) {
+      case 0:
+        printf("using default tessVtxSM\n");
+        break;
+      case 1:
+        printf("using simple tessVtxSM\n");
+        break;
+      case 2:
+        printf("using per-face tessVtxSM\n");
+        break;
+    }
   }
   if (key == GLFW_KEY_3 && action == GLFW_PRESS) {
     dcel->useSampTex = !dcel->useSampTex;
+    if (dcel->useSampTex)
+      printf("using texture sampling patterns\n");
+    else
+      printf("using computed sampling patterns\n");
   }
   if (key == GLFW_KEY_4 && action == GLFW_PRESS) {
     dcel->useSvdUpdate = !dcel->useSvdUpdate;
+    if (dcel->useSvdUpdate)
+      printf("using rank-1 updating\n");
+    else
+      printf("using rank-n updating\n");
   }
 }
 

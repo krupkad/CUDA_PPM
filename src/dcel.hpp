@@ -35,7 +35,7 @@ class DCEL {
 
     // optimization options
     bool useTessSM;
-    bool useTessAltSM;
+    int useTessAltSM;
     bool useSampTex;
     bool useSvdUpdate;
 
