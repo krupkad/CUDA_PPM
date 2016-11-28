@@ -5,7 +5,9 @@
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-#include "glm/gtc/matrix_transform.hpp"
+#include <glm/gtc/matrix_transform.hpp>
+
+#include <cuda_runtime.h>
 
 #include "dcel.hpp"
 #include "shader.hpp"
@@ -25,9 +27,27 @@ float fovy = (float) (M_PI / 4), zNear = 0.10f, zFar = 100.0f;
 float theta = 1.22f, phi = -0.70f, zoom = 5.0f;
 glm::vec3 camPos;
 glm::mat4 projection;
-Shader *shader;
 
+Shader *shader;
 DCEL *dcel;
+
+int cudaProbe() {
+	int nDevices;
+  cudaGetDeviceCount(&nDevices);
+  for (int i = 0; i < nDevices; i++) {
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, i);
+    printf("Device Number: %d\n", i);
+    printf("  Device name: %s\n", prop.name);
+    printf("  Memory Clock Rate (KHz): %d\n",
+           prop.memoryClockRate);
+    printf("  Memory Bus Width (bits): %d\n",
+           prop.memoryBusWidth);
+    printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
+           2.0*prop.memoryClockRate*(prop.memoryBusWidth/8)/1.0e6);
+  }
+	return nDevices;
+}
 
 int main(int argc, char *argv[]) {
   if (argc < 2) {
@@ -35,79 +55,94 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  // initialize window
-  if(!glfwInit()) {
-    printf("glfw err\n");
-    exit(EXIT_FAILURE);
-  }
-  GLFWwindow* window = glfwCreateWindow(xSize, ySize, "Scene Graph", NULL, NULL);
-  glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-  glfwMakeContextCurrent(window);
-  printf("initialized glfw\n");
+	int nDevices = cudaProbe();
+	if (!nDevices) {
+		printf("no CUDA device found\n");
+		return 0;
+	}
 
-  // initialize glew
-  glewInit();
-
-  // Set the color which clears the screen between frames
-  glClearColor(0, 0, 0, 1);
-
-  // Enable and clear the depth buffer
-  glEnable(GL_DEPTH_TEST);
-  glClearDepth(1.0);
-  glDepthFunc(GL_LEQUAL);
-
-  // set glfw callbacks
-  glfwSetWindowSizeCallback(window, resizeCallback);
-  glfwSetKeyCallback(window, keyCallback);
-  glfwSetCursorPosCallback(window, mousePositionCallback);
-  glfwSetMouseButtonCallback(window, mouseButtonCallback);
-  glfwSetScrollCallback(window, scrollCallback);
-
-  //create the dcel
+  // create the DCEL
   dcel = new DCEL(argv[1]);
+  
+  // initialize window
+  GLFWwindow *window;
+  if(!glfwInit()) {
+    printf("couldn't initialize glfw, disabling visualization\n");
+    dcel->useVisualize = false;
+  } else {
+    window = glfwCreateWindow(xSize, ySize, "Scene Graph", NULL, NULL);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    glfwMakeContextCurrent(window);
+    printf("initialized glfw\n");
+
+    // initialize glew
+    glewInit();
+
+    // Set the color which clears the screen between frames
+    glClearColor(0, 0, 0, 1);
+
+    // Enable and clear the depth buffer
+    glEnable(GL_DEPTH_TEST);
+    glClearDepth(1.0);
+    glDepthFunc(GL_LEQUAL);
+
+    // set glfw callbacks
+    glfwSetWindowSizeCallback(window, resizeCallback);
+    glfwSetKeyCallback(window, keyCallback);
+    glfwSetCursorPosCallback(window, mousePositionCallback);
+    glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    glfwSetScrollCallback(window, scrollCallback);
+  
+    //create our shader
+    shader = new Shader();
+    shader->setShader("shaders/dcel.frag.glsl", GL_FRAGMENT_SHADER);
+    shader->setShader("shaders/dcel.vert.glsl", GL_VERTEX_SHADER);
+    shader->recompile();
+
+    updateCamera();
+    printGLErrorLog();
+  }  
+
+  // actually build the dcel
+  dcel->rebuild(8, 16);
   printf("created dcel\n");
 
-  //create our shader
-  shader = new Shader();
-  shader->setShader("shaders/dcel.frag.glsl", GL_FRAGMENT_SHADER);
-  shader->setShader("shaders/dcel.vert.glsl", GL_VERTEX_SHADER);
-  shader->recompile();
-  printGLErrorLog();
-
-  printf("begin main loop\n");
   int nbFrames = 0;
   double lastTime = glfwGetTime();
-  updateCamera();
   double dt = 0, alpha = .98;
-  while(!glfwWindowShouldClose(window)) {
-    // Clear the screen so that we only see newly drawn images
-    // glfwSetCursorPos(window, xSize/2, ySize/2);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  while(!(window && glfwWindowShouldClose(window))) {
+    // update the DCEL
+    dt += dcel->update();
+    
+    // draw if we are visualizing
+    if (window) {
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      dcel->draw(shader, nullptr);
 
-    /* TODO: draw things here */
-    float uTime = dcel->update();
-    dcel->draw(shader, nullptr);
-    dt = uTime*(1.0-alpha) + dt*alpha;
+      // Move the rendering we just made onto the screen
+      glfwSwapBuffers(window);
+      glfwPollEvents();
 
-    // Move the rendering we just made onto the screen
-    glfwSwapBuffers(window);
-    glfwPollEvents();
+      // Check for any GL errors that have happened recently
+      printGLErrorLog();
+    }
 
+    // perform timing
     double currentTime = glfwGetTime();
     nbFrames++;
     if (currentTime - lastTime >= 1.0){
-       printf("%.1f fps (dt = %.3g us)\n", double(nbFrames)/(currentTime - lastTime), 1000.0*dt);
+       printf("%.1f fps (dt = %.3g us)\n", double(nbFrames)/(currentTime - lastTime), 1000.0*dt/nbFrames);
        nbFrames = 0;
+       dt = 0.0f;
        lastTime += 1.0;
     }
-
-    // Check for any GL errors that have happened recently
-    printGLErrorLog();
   }
 
-  glfwDestroyWindow(window);
-  glfwTerminate();
-  delete shader;
+  if (window) {
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    delete shader;
+  }
   delete dcel;
 
   return 0;
@@ -185,3 +220,4 @@ void updateCamera() {
 
   shader->setUniform("model", projection);
 }
+

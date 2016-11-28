@@ -25,10 +25,12 @@ class DCEL {
     DCEL(const char *fName);
     ~DCEL();
 
+    void rebuild(int nBasis, int nSamp);
     float update();
     void draw(Shader *vShader, Shader *tShader);
 
     // visualization options
+    bool useVisualize;
     bool visSkel;
     bool visFill;
 
@@ -41,6 +43,7 @@ class DCEL {
   private:
     // host data
     std::vector<float> vList;
+    std::string inFile;
     std::vector<int> fList;
 
     std::vector<int4> heFaces, heLoops;
@@ -57,6 +60,8 @@ class DCEL {
     float2 *dev_uvIdxMap;
     int2 *dev_iuvIdxMap;
     float *dev_tessWgt;
+    int *dev_tessIdx;
+    float *dev_tessVtx;
 
     float *dev_dv;
 
@@ -69,16 +74,16 @@ class DCEL {
     int degMin, degMax, nDeg;
 
     // GL visualization data
-	unsigned int vboIdx, vboVtx;
-	unsigned int vboTessIdx, vboTessVtx;
-	cudaGraphicsResource *dev_vboTessIdx, *dev_vboTessVtx;
+	  unsigned int vboIdx, vboVtx;
+	  unsigned int vboTessIdx, vboTessVtx;
+	  cudaGraphicsResource *dev_vboTessIdx, *dev_vboTessVtx;
 
     void objRead(const char *fName);
     bool objReadVtx(std::istream &fStream);
     bool objReadFace(std::istream &fStream);
     void getHeLoops();
 
-    void devInit(int blkDim1d = 256, int blkDim2d = 32);
+    void devInit(int nBasis, int nSamp);
     void genSampTex();
     void devFree();
 

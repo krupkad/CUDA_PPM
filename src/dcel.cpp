@@ -19,24 +19,29 @@ DCEL::DCEL(const char *fName) :
   useTessSM(true),
   useTessAltSM(true),
   useSampTex(true),
-  useSvdUpdate(true)
-{
-  objRead(fName);
-  printf("read done\n");
-
-  visInit();
-  printf("vis done\n");
-
-  devInit();
-  printf("dev done\n");
-
-
-  cudaDeviceSynchronize();
-}
+  useSvdUpdate(true),
+  useVisualize(true),
+  visFill(false),
+  visSkel(true),
+  inFile(fName)
+{}
 
 DCEL::~DCEL() {
   devFree();
   visFree();
+}
+
+void DCEL::rebuild(int nBasis, int nSamp) {
+  objRead(inFile.c_str());
+  printf("read done\n");
+
+  if (useVisualize) {
+    visInit();
+    printf("vis done\n");
+  }
+
+  devInit(nBasis, nSamp);
+  printf("dev done\n");
 }
 
 // sort half edges a) by source, b) in patch boundary order
@@ -219,9 +224,6 @@ void DCEL::visInit() {
   glBufferData(GL_ARRAY_BUFFER, 3 * nFace * nSubFace * sizeof(int), 0, GL_STATIC_DRAW);
   cudaGraphicsGLRegisterBuffer(&dev_vboTessIdx, vboTessIdx, cudaGraphicsMapFlagsNone);
   checkCUDAError("cudaGraphicsGLRegisterBuffer", __LINE__);
-
-  visFill = false;
-  visSkel = true;
 }
 
 void DCEL::draw(Shader *vShader, Shader *tShader) {
@@ -257,6 +259,9 @@ void DCEL::draw(Shader *vShader, Shader *tShader) {
 
 
 void DCEL::visFree() {
+  if (!useVisualize)
+    return;
+
   glDeleteBuffers(1,&vboVtx); // vList.size() vertices (3 floats)
   glDeleteBuffers(1,&vboIdx); // vList.size() vertices (3 floats)
   cudaGraphicsUnregisterResource(dev_vboTessIdx);

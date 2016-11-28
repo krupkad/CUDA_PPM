@@ -250,7 +250,8 @@ __global__ void kTessVtxAltSM(int nVtx, int nHe, int nSub, int nSubVtx, int nBas
   int dOff = he.z + (he.w*(he.w - 1) - degMin*(degMin - 1)) / 2;
 
   extern __shared__ float4 sTessVtxAltAll2[];
-  float4 *sLoc = &sTessVtxAltAll2[threadIdx.x * nBasis2];
+  float4 *sLoc = &sTessVtxAltAll2[1 + threadIdx.x * nBasis2];
+  float4 &sAcc = sTessVtxAltAll2[0];
   for (int i = threadIdx.y; i < nBasis2; i += blockDim.y) {
     sLoc[i].x = coeff[i + he.x*nBasis2 + 0 * nBasis2*nVtx];
     sLoc[i].y = coeff[i + he.x*nBasis2 + 1 * nBasis2*nVtx];
@@ -264,22 +265,22 @@ __global__ void kTessVtxAltSM(int nVtx, int nHe, int nSub, int nSubVtx, int nBas
   const int uvRot[4] = { uv.x, uv.y, nSub - uv.x - uv.y, uv.x };
   int uvIdxLoc = UV_IDX(uvRot[heIdx % 3], uvRot[heIdx % 3 + 1]);
 
-  float4 v = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-  v.w = bezData[dOff*nSubVtx*nBasis2 + uvIdxLoc*nBasis2].y;
+  sAcc = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+  sAcc.w = bezData[dOff*nSubVtx*nBasis2 + uvIdxLoc*nBasis2].y;
   for (int i = 0; i < nBasis2; i++) {
     float b = bezData[i + dOff*nSubVtx*nBasis2 + uvIdxLoc*nBasis2].x;
-    v.x += sLoc[i].x * b * v.w;
-    v.y += sLoc[i].y * b * v.w;
-    v.z += sLoc[i].z * b * v.w;
+    sAcc.x += sLoc[i].x * b * sAcc.w;
+    sAcc.y += sLoc[i].y * b * sAcc.w;
+    sAcc.z += sLoc[i].z * b * sAcc.w;
   }
 
   int fIdx = heIdx / 3;
   float *out = &vtxOut[3 * (fIdx*nSubVtx + uvIdx)];
   float *wgt = &wgtOut[fIdx*nSubVtx + uvIdx];
-  atomicAdd(&out[0], v.x);
-  atomicAdd(&out[1], v.y);
-  atomicAdd(&out[2], v.z);
-  atomicAdd(wgt, v.w);
+  atomicAdd(&out[0], sAcc.x);
+  atomicAdd(&out[1], sAcc.y);
+  atomicAdd(&out[2], sAcc.z);
+  atomicAdd(wgt, sAcc.w);
 }
 
 __global__ void kUpdateCoeff(int nBasis2, int nSamp, float *V, float sigma, float *dv, float *coeff) {
@@ -389,7 +390,7 @@ void DCEL::genSampTex() {
 }
 
 // allocate and initialize DCEL data
-void DCEL::devInit(int blkDim1d, int blkDim2d) {
+void DCEL::devInit(int nBasis, int nSamp) {
   printf("uploading mesh data\n");
   cudaMalloc(&dev_vList, 3*nVtx*sizeof(float));
   cudaMemcpy(dev_vList, &vList[0],  3*nVtx*sizeof(float), cudaMemcpyHostToDevice);
@@ -412,8 +413,7 @@ void DCEL::devInit(int blkDim1d, int blkDim2d) {
   kGetHeRootInfo<<<blkCnt, blkSize>>>(nHe, dev_vBndList, dev_heFaces, dev_heLoops);
 
   // initialize the bezier patch calculator
-  bezier = new Bezier<float>(8,16);
-  cudaDeviceSynchronize();
+  bezier = new Bezier<float>(nBasis, nSamp);
 
   // build the uv index map
   printf("creating uv index map %d\n", nSubVtx);
@@ -451,17 +451,22 @@ void DCEL::devInit(int blkDim1d, int blkDim2d) {
   cudaMalloc(&dev_coeff, 3 * bezier->nBasis2 * nVtx * sizeof(float));
 
   printf("creating edge tesselation\n");
-  int *dev_tessIdx;
-  size_t nBytes;
-  cudaGraphicsMapResources(1, &dev_vboTessIdx, 0);
-  cudaGraphicsResourceGetMappedPointer((void**)&dev_tessIdx, &nBytes, dev_vboTessIdx);
+  if (useVisualize) {
+    size_t nBytes;
+    cudaGraphicsMapResources(1, &dev_vboTessIdx, 0);
+    cudaGraphicsResourceGetMappedPointer((void**)&dev_tessIdx, &nBytes, dev_vboTessIdx);
+  } else {
+    cudaMalloc(&dev_tessIdx, 3*nFace*nSubFace*sizeof(int));
+  }
   blkSize.x = 64;
   blkSize.y = 16;
   blkCnt.x = (nFace + blkSize.x - 1) / blkSize.x;
   blkCnt.y = (nSubVtx + blkSize.y - 1) / blkSize.y;
   kTessEdges<<<blkCnt, blkSize>>>(nFace, nSub, dev_iuvIdxMap, dev_tessIdx);
-  cudaGraphicsUnmapResources(1, &dev_vboTessIdx, 0);
+  if (useVisualize)
+    cudaGraphicsUnmapResources(1, &dev_vboTessIdx, 0);
   checkCUDAError("kTessEdges", __LINE__);
+
 
   float *dv = new float[3 * nVtx];
   for (int i = 0; i < 3 * nVtx; i++) {
@@ -473,7 +478,6 @@ void DCEL::devInit(int blkDim1d, int blkDim2d) {
   cudaMemcpy(dev_dv, dv, 3 * nVtx*sizeof(float), cudaMemcpyHostToDevice);
   delete dv;
 
-  cudaMalloc(&dev_tessWgt, nFace*nSubVtx*sizeof(float));
 
   if (useSvdUpdate) {
     dim3 blkDim;
@@ -487,13 +491,13 @@ void DCEL::devInit(int blkDim1d, int blkDim2d) {
     blkCnt.y = (bezier->nGrid + blkDim.y - 1) / blkDim.y;
     blkCnt.z = (nVtx + blkDim.z - 1) / blkDim.z;
     if (useSampTex) {
-      kMeshSample << <blkCnt, blkDim >> >(nVtx, bezier->nGrid, degMin,
+      kMeshSample<<<blkCnt, blkDim>>>(nVtx, bezier->nGrid, degMin,
         sampTexObj,
         dev_heLoops, dev_vBndList,
         dev_vList, dev_samp);
     }
     else {
-      kMeshSampleOrig << <blkCnt, blkDim >> >(nVtx, bezier->nGrid, degMin,
+      kMeshSampleOrig<<<blkCnt, blkDim>>>(nVtx, bezier->nGrid, degMin,
         sampTexObj,
         dev_heLoops, dev_vBndList,
         dev_vList, dev_samp);
@@ -503,6 +507,10 @@ void DCEL::devInit(int blkDim1d, int blkDim2d) {
     bezier->getCoeff(nVtx, dev_samp, dev_coeff);
     checkCUDAError("getCoeff", __LINE__);
   }
+
+  if (!useVisualize)
+    cudaMalloc(&dev_tessVtx, 3*nFace*nSubVtx*sizeof(float));
+  cudaMalloc(&dev_tessWgt, nFace*nSubVtx*sizeof(float));
 }
 
 float DCEL::update() {
@@ -523,7 +531,7 @@ float DCEL::update() {
     blkCnt.x = (bezier->nBasis + blkDim.x - 1) / blkDim.x;
     blkCnt.y = (nVtx + blkDim.y - 1) / blkDim.y;
     blkCnt.z = 1;
-    kUpdateCoeff << <blkCnt, blkDim >> >(bezier->nBasis2, nVtx, bezier->dev_V, 1.0, dev_dv, dev_coeff);
+    kUpdateCoeff<<<blkCnt, blkDim>>>(bezier->nBasis2, nVtx, bezier->dev_V, 1.0, dev_dv, dev_coeff);
     checkCUDAError("kUpdateCoeff", __LINE__);
     //bezier->updateCoeff(nVtx, dev_coeff, dev_dv);
   }
@@ -536,13 +544,13 @@ float DCEL::update() {
     blkCnt.y = (bezier->nGrid + blkDim.y - 1) / blkDim.y;
     blkCnt.z = (nVtx + blkDim.z - 1) / blkDim.z;
     if (useSampTex) {
-      kMeshSample << <blkCnt, blkDim >> >(nVtx, bezier->nGrid, degMin,
+      kMeshSample<<<blkCnt, blkDim>>>(nVtx, bezier->nGrid, degMin,
         sampTexObj,
         dev_heLoops, dev_vBndList,
         dev_vList, dev_samp);
     }
     else {
-      kMeshSampleOrig << <blkCnt, blkDim >> >(nVtx, bezier->nGrid, degMin,
+      kMeshSampleOrig<<<blkCnt, blkDim>>>(nVtx, bezier->nGrid, degMin,
         sampTexObj,
         dev_heLoops, dev_vBndList,
         dev_vList, dev_samp);
@@ -554,11 +562,11 @@ float DCEL::update() {
   }
 
   // calculate new vertex positions
-  size_t nBytes;
-  float *dev_tessVtx;
-  cudaGraphicsMapResources(1, &dev_vboTessVtx, 0);
-  cudaGraphicsResourceGetMappedPointer((void**)&dev_tessVtx, &nBytes, dev_vboTessVtx);
-
+  if (useVisualize) {
+    size_t nBytes;
+    cudaGraphicsMapResources(1, &dev_vboTessVtx, 0);
+    cudaGraphicsResourceGetMappedPointer((void**)&dev_tessVtx, &nBytes, dev_vboTessVtx);
+  }
   if (useTessSM) {
     blkDim.x = 16;
     blkDim.y = 32;
@@ -569,12 +577,13 @@ float DCEL::update() {
     cudaMemset(dev_tessVtx, 0, 3 * nFace*nSubVtx*sizeof(float));
     cudaMemset(dev_tessWgt, 0, nFace*nSubVtx*sizeof(float));
     int smSize = blkDim.x * bezier->nBasis2 * sizeof(float4);
-    if (useTessAltSM)
+    if (useTessAltSM) {
 	    kTessVtxAltSM<<<blkCnt, blkDim, smSize>>>(nVtx, nHe, nSub, nSubVtx, bezier->nBasis2, degMin,
           dev_heFaces, dev_bezPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx, dev_tessWgt);
-    else
-      kTessVtxSM << <blkCnt, blkDim, smSize >> >(nVtx, nHe, nSub, nSubVtx, bezier->nBasis2, degMin,
+    } else {
+      kTessVtxSM<<<blkCnt, blkDim, smSize>>>(nVtx, nHe, nSub, nSubVtx, bezier->nBasis2, degMin,
           dev_heFaces, dev_bezPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx, dev_tessWgt);
+    }
     checkCUDAError("kTessVtxSM", __LINE__); 
 
 	  blkDim.x = 128;
@@ -583,7 +592,7 @@ float DCEL::update() {
 	  blkCnt.x = (nFace + blkDim.x - 1) / blkDim.x;
 	  blkCnt.y = (nSubVtx + blkDim.y - 1) / blkDim.y;
 	  blkCnt.z = 1;
-    kWeightScale << <blkCnt, blkDim >> >(nFace, nSubVtx, dev_tessVtx, dev_tessWgt);
+    kWeightScale<<<blkCnt, blkDim>>>(nFace, nSubVtx, dev_tessVtx, dev_tessWgt);
     checkCUDAError("kWeightScale", __LINE__);
   }
   else {
@@ -598,8 +607,8 @@ float DCEL::update() {
       dev_heFaces, dev_bezPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx);
     checkCUDAError("kTessVtx", __LINE__);
   }
-
-  cudaGraphicsUnmapResources(1, &dev_vboTessVtx, 0);
+  if (useVisualize)
+    cudaGraphicsUnmapResources(1, &dev_vboTessVtx, 0);
 
   float dt;
   cudaEventRecord(stop, 0);
@@ -621,4 +630,10 @@ void DCEL::devFree() {
   cudaFree(dev_vList);
   cudaFree(dev_vBndList);
   cudaFree(dev_tessWgt);
+
+  if (useVisualize) {
+    cudaFree(dev_tessVtx);
+    cudaFree(dev_tessIdx);
+  }
 }
+
