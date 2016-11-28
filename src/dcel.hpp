@@ -22,7 +22,7 @@ class Bezier;
 
 class DCEL {
   public:
-    DCEL(const char *fName);
+    DCEL(const char *fName, bool glVis = true);
     ~DCEL();
 
     void rebuild(int nBasis, int nSamp);
@@ -30,7 +30,6 @@ class DCEL {
     void draw(Shader *vShader, Shader *tShader);
 
     // visualization options
-    bool useVisualize;
     bool visSkel;
     bool visFill;
 
@@ -74,6 +73,7 @@ class DCEL {
     int degMin, degMax, nDeg;
 
     // GL visualization data
+    bool useVisualize;
 	  unsigned int vboIdx, vboVtx;
 	  unsigned int vboTessIdx, vboTessVtx;
 	  cudaGraphicsResource *dev_vboTessIdx, *dev_vboTessVtx;

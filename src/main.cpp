@@ -65,13 +65,11 @@ int main(int argc, char *argv[]) {
 	}
 
   // create the DCEL
-  dcel = new DCEL(argv[1]);
   
   // initialize window
-  GLFWwindow *window;
+  GLFWwindow *window = nullptr;
   if(!glfwInit()) {
     printf("couldn't initialize glfw, disabling visualization\n");
-    dcel->useVisualize = false;
   } else {
     window = glfwCreateWindow(xSize, ySize, "Scene Graph", NULL, NULL);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -107,6 +105,7 @@ int main(int argc, char *argv[]) {
   }  
 
   // actually build the dcel
+  dcel = new DCEL(argv[1], window != nullptr);
   dcel->rebuild(8, 16);
   printf("created dcel\n");
 

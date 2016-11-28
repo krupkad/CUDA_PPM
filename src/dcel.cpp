@@ -15,12 +15,12 @@
 #include <algorithm>
 
 
-DCEL::DCEL(const char *fName) :
+DCEL::DCEL(const char *fName, bool glVis) :
   useTessSM(true),
   useTessAltSM(true),
   useSampTex(true),
   useSvdUpdate(true),
-  useVisualize(true),
+  useVisualize(glVis),
   visFill(false),
   visSkel(true),
   inFile(fName)
