@@ -53,11 +53,13 @@ int cudaProbe() {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc < 2) {
-    printf("missing arg\n");
+  if (argc < 4) {
+    printf("usage: %s nBasis nSamp objFile\n", argv[0]);
     return 0;
   }
-
+  int nBasis = atoi(argv[1]);
+  int nSamp = atoi(argv[2]);
+ 
 	int nDevices = cudaProbe();
 	if (!nDevices) {
 		printf("no CUDA device found\n");
@@ -105,8 +107,8 @@ int main(int argc, char *argv[]) {
   }  
 
   // actually build the dcel
-  dcel = new DCEL(argv[1], window != nullptr);
-  dcel->rebuild(8, 16);
+  dcel = new DCEL(argv[3], window != nullptr);
+  dcel->rebuild(nBasis, nSamp);
   printf("created dcel\n");
 
   int nbFrames = 0;
@@ -133,7 +135,7 @@ int main(int argc, char *argv[]) {
     double currentTime = glfwGetTime();
     nbFrames++;
     if (currentTime - lastTime >= 1.0){
-       printf("%.1f fps (dt = %.3g us)\n", double(nbFrames)/(currentTime - lastTime), 1000.0*dt/nbFrames);
+       printf("%.1f fps (dt = %.3g ms)\n", double(nbFrames)/(currentTime - lastTime), dt/nbFrames);
        nbFrames = 0;
        dt = 0.0f;
        lastTime += 1.0;
@@ -175,25 +177,20 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
   if (key == GLFW_KEY_1 && action == GLFW_PRESS) {
     dcel->useTessSM = !dcel->useTessSM;
     if (dcel->useTessSM) {
-      dcel->useTessAltSM = 0;
-      printf("using default tessVtxSM\n");
+      if (dcel->useTessAltSM)
+        printf("using full-SM tessVtx\n");
+      else
+        printf("using partial-SM tessVtx\n");
     } else {
       printf("using non-SM tessVtx\n");
     }
   }
   if (key == GLFW_KEY_2 && action == GLFW_PRESS) {
-    dcel->useTessAltSM = (dcel->useTessAltSM + 1) % 3;
-    switch(dcel->useTessAltSM) {
-      case 0:
-        printf("using default tessVtxSM\n");
-        break;
-      case 1:
-        printf("using simple tessVtxSM\n");
-        break;
-      case 2:
-        printf("using per-face tessVtxSM\n");
-        break;
-    }
+    dcel->useTessAltSM = !dcel->useTessAltSM;
+    if (dcel->useTessAltSM)
+      printf("using full-SM tessVtx\n");
+    else
+      printf("using partial-SM tessVtx\n");
   }
   if (key == GLFW_KEY_3 && action == GLFW_PRESS) {
     dcel->useSampTex = !dcel->useSampTex;
@@ -209,6 +206,13 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     else
       printf("using rank-n updating\n");
   }
+  if (key == GLFW_KEY_5 && action == GLFW_PRESS) {
+    dcel->useBlasUpdate = !dcel->useBlasUpdate;
+    if (dcel->useBlasUpdate)
+      printf("using cublas updating\n");
+    else
+      printf("using kernel updating\n");
+  }
 }
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
@@ -221,7 +225,7 @@ void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
     // compute new camera parameters
     phi += (xpos - lastX) / xSize;
     theta -= (ypos - lastY) / ySize;
-    theta = std::fmax(0.01f, std::fmin(theta, 3.14f));
+    //theta = std::fmax(0.01f, std::fmin(theta, 3.14f));
     updateCamera();
   }
 
@@ -231,7 +235,7 @@ void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
 
 void scrollCallback(GLFWwindow* window, double dx, double dy) {
   zoom += 30.0f*dy / ySize;
-  zoom = std::fmax(0.1f, std::fmin(zoom, 10.0f));
+  zoom = std::fmax(0.01f, std::fmin(zoom, 100.0f));
   updateCamera();
 }
 

@@ -35,9 +35,10 @@ class DCEL {
 
     // optimization options
     bool useTessSM;
-    int useTessAltSM;
+    bool useTessAltSM;
     bool useSampTex;
     bool useSvdUpdate;
+    bool useBlasUpdate;
 
   private:
     // host data
