@@ -11,6 +11,7 @@
 
 #include "dcel.hpp"
 #include "shader.hpp"
+#include "util/error.hpp"
 
 // Standard glut-based program functions
 void resizeCallback(GLFWwindow*, int, int);
@@ -37,6 +38,8 @@ int cudaProbe() {
   for (int i = 0; i < nDevices; i++) {
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, i);
+    checkCUDAError("cudaGetDeviceProperties", __LINE__);
+    
     printf("Device Number: %d\n", i);
     printf("  Device name: %s\n", prop.name);
     printf("  Memory Clock Rate (KHz): %d\n",
