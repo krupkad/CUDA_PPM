@@ -96,7 +96,6 @@ add_subdirectory(src)
 cuda_add_executable(${CMAKE_PROJECT_NAME}
     "src/dcel.hpp"
     "src/shader.hpp"
-    "src/dcel.cpp"
     "src/shader.cpp"
     "src/main.cpp"
 )
