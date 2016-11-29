@@ -102,11 +102,11 @@ int main(int argc, char *argv[]) {
   dcel = new DCEL(argv[3], window != nullptr);
   
   // check CUDA devices
-	int nDevices = cudaProbe();
-	if (!nDevices) {
-		printf("no CUDA device found\n");
-		return 0;
-	}
+  int nDevices = cudaProbe();
+  if (!nDevices) {
+    printf("no CUDA device found\n");
+    return 0;
+  }
 
   // actually build the dcel
   dcel->rebuild(nBasis, nSamp);
@@ -153,8 +153,7 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-void resizeCallback(GLFWwindow* window, int x, int y)
-{
+void resizeCallback(GLFWwindow* window, int x, int y) {
   xSize = x;
   ySize = y;
   glViewport(0,0,x,y);
@@ -214,6 +213,23 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     else
       printf("using kernel updating\n");
   }
+
+  if (key == GLFW_KEY_J && action == GLFW_PRESS) {
+    phi += M_PI/18.0;
+    updateCamera();
+  }
+  if (key == GLFW_KEY_L && action == GLFW_PRESS) {
+    phi -= M_PI/18.0;
+    updateCamera();
+  }
+  if (key == GLFW_KEY_K && action == GLFW_PRESS) {
+    theta += M_PI/18.0;
+    updateCamera();
+  }
+  if (key == GLFW_KEY_I && action == GLFW_PRESS) {
+    theta -= M_PI/18.0;
+    updateCamera();
+  }
 }
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
@@ -223,10 +239,8 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
   if (leftMousePressed) {
-    // compute new camera parameters
     phi += (xpos - lastX) / xSize;
     theta -= (ypos - lastY) / ySize;
-    //theta = std::fmax(0.01f, std::fmin(theta, 3.14f));
     updateCamera();
   }
 
@@ -241,13 +255,15 @@ void scrollCallback(GLFWwindow* window, double dx, double dy) {
 }
 
 void updateCamera() {
+  theta = std::min((float)M_PI-0.001f, std::max(0.001f, theta));
+
   camPos.x = zoom * sin(phi) * sin(theta);
-  camPos.z = zoom * cos(theta);
-  camPos.y = zoom * cos(phi) * sin(theta);
+  camPos.y = zoom * cos(theta);
+  camPos.z = -zoom * cos(phi) * sin(theta);
 
 
   projection = glm::perspective(fovy, float(xSize) / float(ySize), zNear, zFar);
-  glm::mat4 view = glm::lookAt(camPos, glm::vec3(0,0,0), glm::vec3(0, 0, 1));
+  glm::mat4 view = glm::lookAt(camPos, glm::vec3(0,0,0), glm::vec3(0, 1, 0));
   projection = projection * view;
 
   shader->setUniform("model", projection);

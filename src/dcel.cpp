@@ -18,6 +18,7 @@
 DCEL::DCEL(const char *fName, bool glVis) :
   useTessSM(true),
   useTessAltSM(true),
+  canUseTexObjs(true),
   useSampTex(true),
   useSvdUpdate(true),
   useBlasUpdate(false),
@@ -32,7 +33,7 @@ DCEL::~DCEL() {
   visFree();
 }
 
-void DCEL::rebuild(int nBasis, int nSamp) {
+void DCEL::rebuild(int nBasis, int nGrid) {
   objRead(inFile.c_str());
   printf("read done\n");
 
@@ -41,7 +42,11 @@ void DCEL::rebuild(int nBasis, int nSamp) {
     printf("vis done\n");
   }
 
-  devInit(nBasis, nSamp);
+  this->nBasis = nBasis;
+  this->nGrid = nGrid;
+  this->nBasis2 = nBasis*nBasis;
+  this->nGrid2 = nGrid*nGrid;
+  devInit();
   printf("dev done\n");
 }
 

@@ -25,7 +25,8 @@ class DCEL {
     DCEL(const char *fName, bool glVis = true);
     ~DCEL();
 
-    void rebuild(int nBasis, int nSamp);
+    void rebuild(int nBasis, int nGrid);
+
     float update();
     void draw(Shader *vShader, Shader *tShader);
 
@@ -34,26 +35,28 @@ class DCEL {
     bool visFill;
 
     // optimization options
-    bool canUseTexObjs;
     bool useTessSM;
     bool useTessAltSM;
     bool useSampTex;
     bool useSvdUpdate;
     bool useBlasUpdate;
 
+    // functionality flags
+    bool canUseTexObjs;
   private:
+    // PPM properties
+    int nBasis, nGrid, nBasis2, nGrid2;
+
     // host data
     std::vector<float> vList;
     std::string inFile;
     std::vector<int> fList;
-
     std::vector<int4> heFaces, heLoops;
     std::vector<int2> vBndList;
     std::unordered_map<int, std::vector<int>> loopMap;
 
     float *dev_vList;
     int2 *dev_vBndList;
-
     Bezier<float> *bezier;
     int4 *dev_heLoops, *dev_heFaces;
     float *dev_samp, *dev_coeff;
@@ -63,13 +66,13 @@ class DCEL {
     float *dev_tessWgt;
     int *dev_tessIdx;
     float *dev_tessVtx;
-
     float *dev_dv;
 
     // sampling texture
     cudaArray *dev_sampTexArray;
     cudaTextureObject_t sampTexObj;
 
+    // tessellation info
     int nVtx, nFace, nHe;
     int nSub, nSubFace, nSubVtx;
     int degMin, degMax, nDeg;
@@ -85,13 +88,26 @@ class DCEL {
     bool objReadFace(std::istream &fStream);
     void getHeLoops();
 
-    void devInit(int nBasis, int nSamp);
-    void genSampTex();
-    void devFree();
-
     void visInit();
-    void visFree();
+    void devInit();
+    void devPatchInit();
+    void devMeshInit();
+    void devCoeffInit();
+    void devTessInit();
 
+    void genSampTex();
+    void genCoeff();
+    void updateCoeff();
+    
+    std::vector<void*> allocList;
+    template <typename T>
+    void devAlloc(T **ptr, size_t size) {
+      cudaMalloc(ptr, size);
+      allocList.push_back(*ptr);
+    }
+
+    void devFree();
+    void visFree();
     void sample();
 };
 
