@@ -42,12 +42,14 @@ int cudaProbe() {
     
     printf("Device Number: %d\n", i);
     printf("  Device name: %s\n", prop.name);
-    printf("  Memory Clock Rate (KHz): %d\n",
-           prop.memoryClockRate);
-    printf("  Memory Bus Width (bits): %d\n",
-           prop.memoryBusWidth);
-    printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
-           2.0*prop.memoryClockRate*(prop.memoryBusWidth/8)/1.0e6);
+    printf("  Compute capability: %d.%d", prop.major, prop.minor);
+    if (prop.major < 3) {
+      printf(" (< 3.0, disabling texSamp)");
+      dcel->canUseTexObjs = false;
+    } else {
+      dcel->canUseTexObjs = true;
+    }
+    printf("\n");
   }
 	return nDevices;
 }
@@ -59,15 +61,7 @@ int main(int argc, char *argv[]) {
   }
   int nBasis = atoi(argv[1]);
   int nSamp = atoi(argv[2]);
- 
-	int nDevices = cudaProbe();
-	if (!nDevices) {
-		printf("no CUDA device found\n");
-		return 0;
-	}
 
-  // create the DCEL
-  
   // initialize window
   GLFWwindow *window = nullptr;
   if(!glfwInit()) {
@@ -105,14 +99,21 @@ int main(int argc, char *argv[]) {
     updateCamera();
     printGLErrorLog();
   }  
+  dcel = new DCEL(argv[3], window != nullptr);
+  
+  // check CUDA devices
+	int nDevices = cudaProbe();
+	if (!nDevices) {
+		printf("no CUDA device found\n");
+		return 0;
+	}
 
   // actually build the dcel
-  dcel = new DCEL(argv[3], window != nullptr);
   dcel->rebuild(nBasis, nSamp);
   printf("created dcel\n");
 
   int nbFrames = 0;
-  double lastTime = glfwGetTime();
+  double lastTime = window ? glfwGetTime() : double(clock())/CLOCKS_PER_SEC;
   double dt = 0, alpha = .98;
   while(!(window && glfwWindowShouldClose(window))) {
     // update the DCEL
@@ -132,7 +133,7 @@ int main(int argc, char *argv[]) {
     }
 
     // perform timing
-    double currentTime = glfwGetTime();
+    double currentTime = window ? glfwGetTime() : double(clock())/CLOCKS_PER_SEC;
     nbFrames++;
     if (currentTime - lastTime >= 1.0){
        printf("%.1f fps (dt = %.3g ms)\n", double(nbFrames)/(currentTime - lastTime), dt/nbFrames);

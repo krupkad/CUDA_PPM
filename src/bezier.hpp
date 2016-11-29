@@ -62,7 +62,7 @@ struct Bezier {
     typedef typename LA<T>::T2 T2;
     typedef typename LA<T>::T4 T4;
 
-    int nGrid, nBasis, nGrid2, nBasis2;
+    integer nGrid, nBasis, nGrid2, nBasis2;
     cudaTextureObject_t texObj;
 
     T *U, *VT, *S;
@@ -113,10 +113,10 @@ Bezier<T>::Bezier(int nBasis, int nGrid) : nBasis(nBasis), nGrid(nGrid) {
   mkLLSProj();
   printf("created LLS matrix\n");
 
-  genSvdTex(10);
-  printf("generate SVD textures\n");
+  //genSvdTex(10);
+  //printf("generate SVD textures\n");
 
-  cudaDeviceSynchronize();
+  //cudaDeviceSynchronize();
 }
 
 template  <typename T>
@@ -211,24 +211,32 @@ T *Bezier<T>::mkBasis(int sz1, int sz2) {
 
 template <typename T>
 int Bezier<T>::svd(T *A) {
-  int ret;
+  integer ret;
   T lwork_query;
-  int lwork = -1;
+  integer lwork = -1;
   char job = 'A';
   LA<T>::gesdd(&job, &nGrid2, &nBasis2, NULL, &nGrid2, NULL, NULL, &nGrid2, NULL, &nBasis2,
                 &lwork_query, &lwork, NULL, &ret);
 
   // allocate memory and perform svd
-  lwork = (int)lwork_query + 1;
+  lwork = (integer)lwork_query + 1;
   U = new T[nGrid2*nGrid2];
   S = new T[nBasis2];
   VT = new T[nBasis2*nBasis2];
   T *work = new T[lwork];
-  int *iwork = new int[8*nBasis2];
+  integer *iwork = new integer[8*nBasis2];
   LA<T>::gesdd(&job, &nGrid2, &nBasis2, A, &nGrid2, S, U, &nGrid2, VT,  &nBasis2,
                 work, &lwork, iwork, &ret);
   delete work;
   delete iwork;
+  
+  T* V0 = new T[nBasis2];
+  for (int i = 0; i < nBasis2; i++)
+    V0[i] = VT[i*nBasis2];
+  cudaMalloc(&dev_V, nBasis2*sizeof(float));
+  cudaMemcpy(dev_V, V0, nBasis2*sizeof(float), cudaMemcpyHostToDevice);
+  delete V0;
+
 
   // create layered texture to sample right singular vectors
 
@@ -247,9 +255,6 @@ void Bezier<T>::genSvdTex(int N) {
       }
     }
   }
-
-  cudaMalloc(&dev_V, nBasis2*nBasis2*sizeof(float));
-  cudaMemcpy(dev_V, texData, nBasis2*N*sizeof(float), cudaMemcpyHostToDevice);
 
   printf("allocating texture memory\n");
   dev_texArray = nullptr;

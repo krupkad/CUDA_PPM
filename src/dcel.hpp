@@ -34,6 +34,7 @@ class DCEL {
     bool visFill;
 
     // optimization options
+    bool canUseTexObjs;
     bool useTessSM;
     bool useTessAltSM;
     bool useSampTex;

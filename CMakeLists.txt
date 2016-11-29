@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.2)
 
 project(robo_thesis)
 
@@ -11,7 +11,7 @@ include_directories("external/include")
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(EXTERNAL_LIB_PATH "external/lib/osx")
 elseif(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-    set(EXTERNAL_LIB_PATH "external/lib/linux" "/usr/lib64")
+    set(EXTERNAL_LIB_PATH "external/lib/linux" "/usr/lib64" "/usr/lib")
 elseif(WIN32)
     set(EXTERNAL_LIB_PATH "external/lib/win")
 endif()
@@ -43,7 +43,6 @@ set(LIBF2C_INCLUDE_DIR "external/include")
 set(LIBF2C_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
 find_library(LIBF2C_LIBRARY "f2c" HINTS "${LIBF2C_LIBRARY_DIR}")
 
-
 set(CORELIBS
     "${GLFW_LIBRARY}"
     "${OPENGL_LIBRARY}"
@@ -51,7 +50,7 @@ set(CORELIBS
     "${LAPACK_LIBRARY}"
     "${BLAS_LIBRARY}"
     "${LIBF2C_LIBRARY}"
-    )
+)
 
 # Enable C++11 for host code
 set(CMAKE_CXX_STANDARD 11)
@@ -62,10 +61,10 @@ set(CMAKE_CONFIGURATION_TYPES Debug;RelWithDebInfo;Release
 set(CUDA_PROPAGATE_HOST_FLAGS OFF)
 set(CMAKE_CXX_FLAGS_DEBUG                 "-O0 -g")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO        "-O2 -g")
-set(CMAKE_CXX_FLAGS_RELEASE               "-O3    -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE               "-O3 -DNDEBUG")
 list(APPEND CUDA_NVCC_FLAGS_DEBUG          -O0 -g -G)
 list(APPEND CUDA_NVCC_FLAGS_RELWITHDEBINFO -O2 -g -lineinfo)
-list(APPEND CUDA_NVCC_FLAGS_RELEASE        -O3    -DNDEBUG)
+list(APPEND CUDA_NVCC_FLAGS_RELEASE        -O3 -DNDEBUG)
 if (WIN32)
     set(CUDA_PROPAGATE_HOST_FLAGS ON)
     set(CMAKE_CXX_FLAGS                       "/MD /EHsc /D _CRT_SECURE_NO_WARNINGS")
@@ -83,7 +82,7 @@ endif()
 
 # Linux options
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-    list(APPEND CMAKE_EXE_LINKER_FLAGS "-lX11 -lXxf86vm -lXrandr -lXi")
+    list(APPEND CMAKE_EXE_LINKER_FLAGS "-lX11 -lXxf86vm -lXrandr -lXi -lXcursor -lXinerama")
 endif()
 
 # CUDA linker options
@@ -97,6 +96,7 @@ add_subdirectory(src)
 cuda_add_executable(${CMAKE_PROJECT_NAME}
     "src/dcel.hpp"
     "src/shader.hpp"
+    "src/dcel.cpp"
     "src/shader.cpp"
     "src/main.cpp"
 )
@@ -114,3 +114,4 @@ add_custom_command(
         ${CMAKE_SOURCE_DIR}/shaders
         ${CMAKE_BINARY_DIR}/shaders
     )
+

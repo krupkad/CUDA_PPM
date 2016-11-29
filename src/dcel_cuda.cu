@@ -288,7 +288,7 @@ __global__ void kUpdateCoeff(int nBasis2, int nSamp, float *V, float sigma, floa
   if (sIdx >= nSamp || bIdx >= nBasis2)
     return;
 
-  float v = sigma * V[bIdx + 0 * nBasis2];
+  float v = sigma * V[bIdx];
   int tIdx = bIdx + sIdx*nBasis2;
   coeff[tIdx + 0 * nSamp*nBasis2] += dv[3 * sIdx + 0] * v;
   coeff[tIdx + 1 * nSamp*nBasis2] += dv[3 * sIdx + 1] * v;
@@ -385,7 +385,7 @@ void DCEL::genSampTex() {
   texDesc.normalizedCoords = 0;
 
   cudaCreateTextureObject(&sampTexObj, &resDesc, &texDesc, nullptr);
-  checkCUDAError("cudaCreateTextureObject", __LINE__);
+  //checkCUDAError("cudaCreateTextureObject", __LINE__);
 }
 
 // allocate and initialize DCEL data
@@ -412,6 +412,7 @@ void DCEL::devInit(int nBasis, int nSamp) {
   kGetHeRootInfo<<<blkCnt, blkSize>>>(nHe, dev_vBndList, dev_heFaces, dev_heLoops);
 
   // initialize the bezier patch calculator
+  printf("bez %d %d\n", nBasis, nSamp);
   bezier = new Bezier<float>(nBasis, nSamp);
 
   // build the uv index map
@@ -445,7 +446,8 @@ void DCEL::devInit(int nBasis, int nSamp) {
   }
 
   printf("creating sample data\n");
-  genSampTex();
+  if (canUseTexObjs)
+    genSampTex();
   cudaMalloc(&dev_samp, 3 * bezier->nGrid2 * nVtx * sizeof(float));
   cudaMalloc(&dev_coeff, 3 * bezier->nBasis2 * nVtx * sizeof(float));
 
@@ -462,9 +464,9 @@ void DCEL::devInit(int nBasis, int nSamp) {
   blkCnt.x = (nFace + blkSize.x - 1) / blkSize.x;
   blkCnt.y = (nSubVtx + blkSize.y - 1) / blkSize.y;
   kTessEdges<<<blkCnt, blkSize>>>(nFace, nSub, dev_iuvIdxMap, dev_tessIdx);
+  checkCUDAError("kTessEdges", __LINE__);
   if (useVisualize)
     cudaGraphicsUnmapResources(1, &dev_vboTessIdx, 0);
-  checkCUDAError("kTessEdges", __LINE__);
 
 
   float *dv = new float[3 * nVtx];
@@ -483,25 +485,26 @@ void DCEL::devInit(int nBasis, int nSamp) {
     dim3 blkCnt;
 
     // generate mesh sample points
-    blkDim.x = 8;
-    blkDim.y = 8;
+    blkDim.x = 4;
+    blkDim.y = 4;
     blkDim.z = 16;
     blkCnt.x = (bezier->nGrid + blkDim.x - 1) / blkDim.x;
     blkCnt.y = (bezier->nGrid + blkDim.y - 1) / blkDim.y;
     blkCnt.z = (nVtx + blkDim.z - 1) / blkDim.z;
-    if (useSampTex) {
+    if (canUseTexObjs && useSampTex) {
       kMeshSample<<<blkCnt, blkDim>>>(nVtx, bezier->nGrid, degMin,
         sampTexObj,
         dev_heLoops, dev_vBndList,
         dev_vList, dev_samp);
+      checkCUDAError("kMeshSample", __LINE__);
     }
     else {
       kMeshSampleOrig<<<blkCnt, blkDim>>>(nVtx, bezier->nGrid, degMin,
         sampTexObj,
         dev_heLoops, dev_vBndList,
         dev_vList, dev_samp);
+      checkCUDAError("kMeshSampleOrig", __LINE__);
     }
-    checkCUDAError("kMeshSample", __LINE__);
 
     bezier->getCoeff(nVtx, dev_samp, dev_coeff);
     checkCUDAError("getCoeff", __LINE__);
@@ -534,7 +537,7 @@ float DCEL::update() {
       blkCnt.x = (bezier->nBasis + blkDim.x - 1) / blkDim.x;
       blkCnt.y = (nVtx + blkDim.y - 1) / blkDim.y;
       blkCnt.z = 1;
-      kUpdateCoeff << <blkCnt, blkDim >> >(bezier->nBasis2, nVtx, bezier->dev_V, 1.0, dev_dv, dev_coeff);
+      kUpdateCoeff<<<blkCnt,blkDim>>>(bezier->nBasis2, nVtx, bezier->dev_V, 1.0, dev_dv, dev_coeff);
       checkCUDAError("kUpdateCoeff", __LINE__);
     }
   }
@@ -547,7 +550,7 @@ float DCEL::update() {
     blkCnt.x = (bezier->nGrid + blkDim.x - 1) / blkDim.x;
     blkCnt.y = (bezier->nGrid + blkDim.y - 1) / blkDim.y;
     blkCnt.z = (nVtx + blkDim.z - 1) / blkDim.z;
-    if (useSampTex) {
+    if (canUseTexObjs && useSampTex) {
       kMeshSample<<<blkCnt, blkDim>>>(nVtx, bezier->nGrid, degMin,
         sampTexObj,
         dev_heLoops, dev_vBndList,
