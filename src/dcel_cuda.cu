@@ -80,7 +80,7 @@ __global__ void kGetHeRootInfo(int nHe, const int2 *vBndList, int4 *heList, int4
 __global__ void kMeshSample(int nVert, int nGrid, int degMin,
                             cudaTextureObject_t sampTexObj,
                             const int4 *heLoops, const int2 *vHeLoopBnd,
-                            const float *vtx, float *samp) {
+                            const float *vData, float *samp) {
   int x = blockIdx.x * blockDim.x + threadIdx.x; // grid idx
   int y = blockIdx.y * blockDim.y + threadIdx.y; // grid idx
   int vtxIdx = blockIdx.z * blockDim.z + threadIdx.z; // vert idx
@@ -89,16 +89,19 @@ __global__ void kMeshSample(int nVert, int nGrid, int degMin,
 
   const int2 &heBnd = vHeLoopBnd[vtxIdx];
   float4 uvi = tex2DLayered<float4>(sampTexObj, x, y, heBnd.y - heBnd.x - degMin);
-  float w = 1.0f - uvi.x - uvi.y;
+  float u = uvi.x, v = uvi.y, w = 1.0f - u - v;
   int heOff = uvi.z;
 
   const int4 &he0 = heLoops[heBnd.x + heOff];
   const int4 &he1 = heLoops[heBnd.x + (heOff + 1)%he0.w];
-  const float *p0  = &vtx[3*he0.x], *p1 = &vtx[3*he0.y], *p2 = &vtx[3*he1.y];
   int sIdx = x + nGrid*y + vtxIdx*nGrid*nGrid, sDim = nGrid*nGrid*nVert;
-  samp[sIdx + 0*sDim] = p0[0] * w + p1[0] * uvi.x + p2[0] * uvi.y;
-  samp[sIdx + 1*sDim] = p0[1] * w + p1[1] * uvi.x + p2[1] * uvi.y;
-  samp[sIdx + 2*sDim] = p0[2] * w + p1[2] * uvi.x + p2[2] * uvi.y;
+  const float *p0, *p1, *p2;
+
+  p0 = &vData[8 * he0.x];
+  p1 = &vData[8 * he0.y];
+  p2 = &vData[8 * he1.y];
+  for (int i = 0; i < 8; i++)
+    samp[sIdx + i * sDim] = p0[i] * w + p1[i] * u + p2[i] * v;
 }
 
 __global__ void kMeshSampleOrig(int nVert, int nGrid, int degMin,
@@ -130,36 +133,36 @@ __global__ void kMeshSampleOrig(int nVert, int nGrid, int degMin,
   float w = 1.0 - u - v;
 
   const int4 &he0 = heLoops[heBnd.x + ord];
-  const int4 &he1 = heLoops[heBnd.x + (ord+1)%he0.w];
-  const float *p0  = &vtx[3*he0.x], *p1 = &vtx[3*he0.y], *p2 = &vtx[3*he1.y];
+  const int4 &he1 = heLoops[heBnd.x + (ord + 1) % he0.w];
   int sIdx = ix + nGrid*iy + vtxIdx*nGrid*nGrid, sDim = nGrid*nGrid*nVert;
-  samp[sIdx + 0*sDim] = p0[0] * w + p1[0] * u + p2[0] * v;
-  samp[sIdx + 1*sDim] = p0[1] * w + p1[1] * u + p2[1] * v;
-  samp[sIdx + 2*sDim] = p0[2] * w + p1[2] * u + p2[2] * v;
+  const float *p0, *p1, *p2;
+
+  p0 = &vtx[8 * he0.x];
+  p1 = &vtx[8 * he0.y];
+  p2 = &vtx[8 * he1.y];
+  for (int i = 0; i < 8; i++)
+    samp[sIdx + i * sDim] = p0[i] * w + p1[i] * u + p2[i] * v;
 }
 
-__device__ void kPatchContrib(int degMin, int nBasis2, int nVtx, int uvIdx, int nSubVtx,
-                               const int4 &he, const float2 *bezData, const float *coeff, float4 &res) {
+__device__ float kPatchContrib(int dataIdx, int degMin, int nBasis2, int nVtx, int uvIdx, int nSubVtx,
+                               const int4 &he, const float2 *bezData, const float *coeff, float &res) {
   int dOff = he.z + (he.w*(he.w - 1) - degMin*(degMin - 1)) / 2;
   const float2 *bez = &bezData[dOff*nSubVtx*nBasis2 + uvIdx*nBasis2];
   float w = bez[0].y;
-  res.w += w;
   for (int i = 0; i < nBasis2; i++)
-    res.x += w * bez[i].x * coeff[i + he.x*nBasis2 + 0 * nBasis2*nVtx];
-  for (int i = 0; i < nBasis2; i++)
-    res.y += w * bez[i].x * coeff[i + he.x*nBasis2 + 1 * nBasis2*nVtx];
-  for (int i = 0; i < nBasis2; i++)
-    res.z += w * bez[i].x * coeff[i + he.x*nBasis2 + 2 * nBasis2*nVtx];
+    res += w * bez[i].x * coeff[i + he.x*nBasis2 + dataIdx * nBasis2*nVtx];
+  return w;
 }
 
 // generate the per-face template for tessellation
 #define UV_IDX(u,v) (((u)+(v)+1)*((u)+(v))/2 + (v))
 __global__ void kTessVtx(int nVtx, int nFace, int nSub, int nSubVtx, int nBasis2, int degMin,
                         const int4 *heFaces, const float2 *bezData, const float *coeff,
-                        const int2 *uvIdxMap, float *vtxOut) {
+                        const int2 *uvIdxMap, float *vDataOut) {
   int fIdx = blockIdx.x * blockDim.x + threadIdx.x;
   int uvIdx = blockIdx.y * blockDim.y + threadIdx.y;
-  if (fIdx >= nFace || uvIdx >= nSubVtx)
+  int dataIdx = blockIdx.z * blockDim.z + threadIdx.z;
+  if (fIdx >= nFace || uvIdx >= nSubVtx || dataIdx >= 8)
     return;
 
   const int4 &he0 = heFaces[3 * fIdx + 0];
@@ -168,18 +171,15 @@ __global__ void kTessVtx(int nVtx, int nFace, int nSub, int nSubVtx, int nBasis2
 
   const int2 &uv = uvIdxMap[uvIdx];
 
-  float4 res = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-  kPatchContrib(degMin, nBasis2, nVtx, UV_IDX(uv.x, uv.y), nSubVtx, he0, bezData, coeff, res);
-  kPatchContrib(degMin, nBasis2, nVtx, UV_IDX(uv.y, nSub - uv.x - uv.y), nSubVtx, he1, bezData, coeff, res);
-  kPatchContrib(degMin, nBasis2, nVtx, UV_IDX(nSub - uv.x - uv.y, uv.x), nSubVtx, he2, bezData, coeff, res);
+  float res = 0.0, wgt = 0.0;
+  wgt += kPatchContrib(dataIdx, degMin, nBasis2, nVtx, UV_IDX(uv.x, uv.y), nSubVtx, he0, bezData, coeff, res);
+  wgt += kPatchContrib(dataIdx, degMin, nBasis2, nVtx, UV_IDX(uv.y, nSub - uv.x - uv.y), nSubVtx, he1, bezData, coeff, res);
+  wgt += kPatchContrib(dataIdx, degMin, nBasis2, nVtx, UV_IDX(nSub - uv.x - uv.y, uv.x), nSubVtx, he2, bezData, coeff, res);
 
-  float *vOut = &vtxOut[3*(fIdx*nSubVtx + uvIdx)];
-  vOut[0] = res.x / res.w;
-  vOut[1] = res.y / res.w;
-  vOut[2] = res.z / res.w;
+  vDataOut[8*(fIdx*nSubVtx + uvIdx) + dataIdx] = res / wgt;
 }
 
-__global__ void kWeightScale(int nFace, int nSubVtx, float *vtx, float *wgt) {
+__global__ void kWeightScale(int nFace, int nSubVtx, float *vData, float *wgt) {
   int fIdx = blockIdx.x * blockDim.x + threadIdx.x;
   int uvIdx = blockIdx.y * blockDim.y + threadIdx.y;
   if (fIdx >= nFace || uvIdx >= nSubVtx)
@@ -187,75 +187,31 @@ __global__ void kWeightScale(int nFace, int nSubVtx, float *vtx, float *wgt) {
 
   float w = wgt[fIdx*nSubVtx + uvIdx];
 
-  vtx[3 * (fIdx*nSubVtx + uvIdx) + 0] /= w;
-  vtx[3 * (fIdx*nSubVtx + uvIdx) + 1] /= w;
-  vtx[3 * (fIdx*nSubVtx + uvIdx) + 2] /= w;
+  for (int i = 0; i < 8; i++)
+    vData[8 * (fIdx*nSubVtx + uvIdx) + i] /= w;
 }
 
 __global__ void kTessVtxSM(int nVtx, int nHe, int nSub, int nSubVtx, int nBasis2, int degMin,
-                            const int4 *heFaces, const float2 *bezData, const float *coeff,
-                            const int2 *uvIdxMap, float *vtxOut, float *wgtOut) {
-  int heIdx = blockIdx.x * blockDim.x + threadIdx.x;
-  int uvIdx = blockIdx.y * blockDim.y + threadIdx.y;
-  if (heIdx >= nHe || uvIdx >= nSubVtx)
-    return;
-
-  const int4 &he = heFaces[heIdx];
-  const int2 &uv = uvIdxMap[uvIdx];
-  const int uvRot[4] = { uv.x, uv.y, nSub - uv.x - uv.y, uv.x };
-  int uvIdxLoc = UV_IDX(uvRot[heIdx % 3], uvRot[heIdx % 3 + 1]);
-  int dOff = he.z + (he.w*(he.w - 1) - degMin*(degMin - 1)) / 2;
-
-  extern __shared__ float4 sTessVtxAltAll[];
-  float4 *sLoc = &sTessVtxAltAll[threadIdx.x * nBasis2];
-  if (threadIdx.y == 0) {
-    for (int i = 0; i < nBasis2; i++)
-      sLoc[i].x = coeff[i + he.x*nBasis2 + 0 * nBasis2*nVtx];
-    for (int i = 0; i < nBasis2; i++)
-      sLoc[i].y = coeff[i + he.x*nBasis2 + 1 * nBasis2*nVtx];
-    for (int i = 0; i < nBasis2; i++)
-      sLoc[i].z = coeff[i + he.x*nBasis2 + 2 * nBasis2*nVtx];
-    for (int i = 0; i < nBasis2; i++)
-      sLoc[i].w = 0.0f;
-  }
-  __syncthreads();
-
-  float4 v = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-  v.w = bezData[dOff*nSubVtx*nBasis2 + uvIdxLoc*nBasis2].y;
-  for (int i = 0; i < nBasis2; i++) {
-    float b = bezData[i + dOff*nSubVtx*nBasis2 + uvIdxLoc*nBasis2].x;
-    v.x += sLoc[i].x * b * v.w;
-    v.y += sLoc[i].y * b * v.w;
-    v.z += sLoc[i].z * b * v.w;
-  }
-
-  int fIdx = heIdx / 3;
-  float *out = &vtxOut[3 * (fIdx*nSubVtx + uvIdx)];
-  float *wgt = &wgtOut[fIdx*nSubVtx + uvIdx];
-  atomicAdd(&out[0], v.x);
-  atomicAdd(&out[1], v.y);
-  atomicAdd(&out[2], v.z);
-  atomicAdd(wgt, v.w);
-}
-
-__global__ void kTessVtxAltSM(int nVtx, int nHe, int nSub, int nSubVtx, int nBasis2, int degMin,
   const int4 *heFaces, const float2 *bezData, const float *coeff,
   const int2 *uvIdxMap, float *vtxOut, float *wgtOut) {
   int heIdx = blockIdx.x * blockDim.x + threadIdx.x;
   int uvIdx = blockIdx.y * blockDim.y + threadIdx.y;
-  if (heIdx >= nHe)
+  int dataIdx = blockIdx.z * blockDim.z + threadIdx.z;
+  if (heIdx >= nHe || dataIdx >= 8)
     return;
 
   const int4 &he = heFaces[heIdx];
   int dOff = he.z + (he.w*(he.w - 1) - degMin*(degMin - 1)) / 2;
 
-  extern __shared__ float4 sTessVtxAltAll2[];
-  float4 *sLoc = &sTessVtxAltAll2[threadIdx.x * nBasis2];
-  for (int i = threadIdx.y; i < nBasis2; i += blockDim.y) {
-    sLoc[i].x = coeff[i + he.x*nBasis2 + 0 * nBasis2*nVtx];
-    sLoc[i].y = coeff[i + he.x*nBasis2 + 1 * nBasis2*nVtx];
-    sLoc[i].z = coeff[i + he.x*nBasis2 + 2 * nBasis2*nVtx];
-  }
+  extern __shared__ float sTessVtxAltAll2[];
+  float *sLoc = &sTessVtxAltAll2[(blockDim.x*threadIdx.z + threadIdx.x) * nBasis2];
+
+  int fIdx = heIdx / 3;
+  float *out = &vtxOut[8 * (fIdx*nSubVtx + uvIdx)];
+  float *wgt = &wgtOut[fIdx*nSubVtx + uvIdx];
+
+  for (int i = threadIdx.y; i < nBasis2; i += blockDim.y)
+    sLoc[i] = coeff[i + he.x*nBasis2 + dataIdx*nBasis2*nVtx];
   __syncthreads();
 
   if (uvIdx >= nSubVtx)
@@ -264,25 +220,35 @@ __global__ void kTessVtxAltSM(int nVtx, int nHe, int nSub, int nSubVtx, int nBas
   const int uvRot[4] = { uv.x, uv.y, nSub - uv.x - uv.y, uv.x };
   int uvIdxLoc = UV_IDX(uvRot[heIdx % 3], uvRot[heIdx % 3 + 1]);
 
-  float4 sAcc = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-  sAcc.w = bezData[dOff*nSubVtx*nBasis2 + uvIdxLoc*nBasis2].y;
-  for (int i = 0; i < nBasis2; i++) {
-    float b = bezData[i + dOff*nSubVtx*nBasis2 + uvIdxLoc*nBasis2].x;
-    sAcc.x += sLoc[i].x * b * sAcc.w;
-    sAcc.y += sLoc[i].y * b * sAcc.w;
-    sAcc.z += sLoc[i].z * b * sAcc.w;
-  }
+  float v = 0.0, w = bezData[dOff*nSubVtx*nBasis2 + uvIdxLoc*nBasis2].y;
+  for (int i = 0; i < nBasis2; i++)
+    v += sLoc[i] * bezData[i + dOff*nSubVtx*nBasis2 + uvIdxLoc*nBasis2].x * w;
 
-  int fIdx = heIdx / 3;
-  float *out = &vtxOut[3 * (fIdx*nSubVtx + uvIdx)];
-  float *wgt = &wgtOut[fIdx*nSubVtx + uvIdx];
-  atomicAdd(&out[0], sAcc.x);
-  atomicAdd(&out[1], sAcc.y);
-  atomicAdd(&out[2], sAcc.z);
-  atomicAdd(wgt, sAcc.w);
+  atomicAdd(&out[dataIdx], v);
+  if (dataIdx == 0)
+    atomicAdd(wgt, w);
 }
 
-__global__ void kUpdateCoeff(int nBasis2, int nSamp, float *V, float sigma, float *dv, float *coeff) {
+
+__global__ void kGetNormals(int nHe, const int4 *heLoops, float *vData) {
+  int heIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  if (heIdx >= nHe)
+    return;
+
+  const int4 &he0 = heLoops[heIdx];
+  const int4 &he1 = heLoops[heIdx - he0.z + (he0.z + 1) % he0.w];
+  float dx1[3], dx0[3];
+  for (int i = 0; i < 3; i++) {
+    dx1[i] = vData[8 * he1.y + i] - vData[8 * he1.x + i];
+    dx0[i] = vData[8 * he0.y + i] - vData[8 * he0.x + i];
+  }
+
+  atomicAdd(&vData[8 * he0.x + 3], dx0[1] * dx1[2] - dx0[2] * dx1[1]);
+  atomicAdd(&vData[8 * he0.x + 4], dx0[2] * dx1[0] - dx0[0] * dx1[2]);
+  atomicAdd(&vData[8 * he0.x + 5], dx0[0] * dx1[1] - dx0[1] * dx1[0]);
+}
+
+__global__ void kUpdateCoeff(int nBasis2, int nSamp, float *V, float sigma, float *dv, float *coeff, float dt) {
   int bIdx = threadIdx.x + blockIdx.x * blockDim.x;
   int sIdx = threadIdx.y + blockIdx.y * blockDim.y;
   if (sIdx >= nSamp || bIdx >= nBasis2)
@@ -290,9 +256,15 @@ __global__ void kUpdateCoeff(int nBasis2, int nSamp, float *V, float sigma, floa
 
   float v = sigma * V[bIdx];
   int tIdx = bIdx + sIdx*nBasis2;
-  coeff[tIdx + 0 * nSamp*nBasis2] += dv[3 * sIdx + 0] * v;
-  coeff[tIdx + 1 * nSamp*nBasis2] += dv[3 * sIdx + 1] * v;
-  coeff[tIdx + 2 * nSamp*nBasis2] += dv[3 * sIdx + 2] * v;
+  coeff[tIdx + 0 * nSamp*nBasis2] += dv[6 * sIdx + 0] * v * dt;
+  coeff[tIdx + 1 * nSamp*nBasis2] += dv[6 * sIdx + 1] * v * dt;
+  coeff[tIdx + 2 * nSamp*nBasis2] += dv[6 * sIdx + 2] * v * dt;
+  dv[6 * sIdx + 0] += dv[6 * sIdx + 3] * dt;
+  dv[6 * sIdx + 1] += dv[6 * sIdx + 4] * dt;
+  dv[6 * sIdx + 2] += dv[6 * sIdx + 5] * dt;
+  dv[6 * sIdx + 3] -= 0.5f*dv[6 * sIdx + 0]*dt;
+  dv[6 * sIdx + 4] -= 0.5f*dv[6 * sIdx + 1] * dt;
+  dv[6 * sIdx + 5] -= 0.5f*dv[6 * sIdx + 2] * dt;
 }
 
 __global__ void kTessEdges(int nFace, int nSub, const int2 *uvIdxMap, int *idxOut) {
@@ -394,7 +366,7 @@ void DCEL::genCoeff() {
   // generate mesh sample points
   blkDim.x = 4;
   blkDim.y = 4;
-  blkDim.z = 16;
+  blkDim.z = 64;
   blkCnt.x = (nGrid + blkDim.x - 1) / blkDim.x;
   blkCnt.y = (nGrid + blkDim.y - 1) / blkDim.y;
   blkCnt.z = (nVtx + blkDim.z - 1) / blkDim.z;
@@ -418,26 +390,29 @@ void DCEL::genCoeff() {
 
 void DCEL::devCoeffInit() {
    // allocate and generate coefficients
-  devAlloc(&dev_samp, 3 * nGrid2 * nVtx * sizeof(float));
-  devAlloc(&dev_coeff, 3 * nBasis2 * nVtx * sizeof(float));
+  devAlloc(&dev_samp, 8 * nGrid2 * nVtx * sizeof(float));
+  devAlloc(&dev_coeff, 8 * nBasis2 * nVtx * sizeof(float));
   genCoeff();
 
   // initialize the deformation vector
-  float *dv = new float[3 * nVtx];
-  for (int i = 0; i < 3 * nVtx; i++) {
-    //dv[i] = 2.0f * float(rand()) / RAND_MAX - 1.0;
-    //dv[i] *= .5;
-    dv[i] = 0.0f;
+  float *dv = new float[6 * nVtx];
+  for (int i = 0; i < nVtx; i++) {
+    dv[6 * i + 0] = 0.0f;
+    dv[6 * i + 1] = 0.0f;
+    dv[6 * i + 2] = 0.0f;
+    dv[6 * i + 3] = 0.1 * (float(rand()) / RAND_MAX - 0.5f);
+    dv[6 * i + 4] = 0.1 * (float(rand()) / RAND_MAX - 0.5f);
+    dv[6 * i + 5] = 0.1 * (float(rand()) / RAND_MAX - 0.5f);
   }
-  devAlloc(&dev_dv, 3 * nVtx*sizeof(float));
-  cudaMemcpy(dev_dv, dv, 3 * nVtx*sizeof(float), cudaMemcpyHostToDevice);
+  devAlloc(&dev_dv, 6 * nVtx*sizeof(float));
+  cudaMemcpy(dev_dv, dv, 6 * nVtx*sizeof(float), cudaMemcpyHostToDevice);
   delete dv;
 }
 
 void DCEL::devMeshInit() {
   printf("uploading mesh data\n");
-  devAlloc(&dev_vList, 3*nVtx*sizeof(float));
-  cudaMemcpy(dev_vList, &vList[0],  3*nVtx*sizeof(float), cudaMemcpyHostToDevice);
+  devAlloc(&dev_vList, 8*nVtx*sizeof(float));
+  cudaMemcpy(dev_vList, &vList[0],  8*nVtx*sizeof(float), cudaMemcpyHostToDevice);
   devAlloc(&dev_heFaces, nHe*sizeof(int4));
   cudaMemcpy(dev_heFaces, &heFaces[0], nHe*sizeof(int4), cudaMemcpyHostToDevice);
 
@@ -451,10 +426,20 @@ void DCEL::devMeshInit() {
   devAlloc(&dev_vBndList, nVtx*sizeof(int2));
   cudaMemset(dev_vBndList, 0xFF, nVtx*sizeof(int2));
   dim3 blkCnt((nHe + 128 - 1) / 128);
-  dim3 blkSize(128);
-  kGetLoopBoundaries<<<blkCnt, blkSize>>>(nHe, dev_heLoops, dev_vBndList);
-  kGetHeRootInfo<<<blkCnt, blkSize>>>(nHe, dev_vBndList, dev_heLoops, dev_heLoops);
-  kGetHeRootInfo<<<blkCnt, blkSize>>>(nHe, dev_vBndList, dev_heFaces, dev_heLoops);
+  dim3 blkDim(128);
+  kGetLoopBoundaries<<<blkCnt, blkDim>>>(nHe, dev_heLoops, dev_vBndList);
+  kGetHeRootInfo<<<blkCnt, blkDim>>>(nHe, dev_vBndList, dev_heLoops, dev_heLoops);
+  kGetHeRootInfo<<<blkCnt, blkDim>>>(nHe, dev_vBndList, dev_heFaces, dev_heLoops);
+
+  // recalculate normals
+  blkDim.x = 1024;
+  blkDim.y = 1;
+  blkDim.z = 1;
+  blkCnt.x = (nHe + blkDim.x - 1) / blkDim.x;
+  blkCnt.y = 1;
+  blkCnt.z = 1;
+  kGetNormals<<<blkCnt, blkDim>>>(nHe, dev_heLoops, dev_vList);
+  checkCUDAError("kGetNormals", __LINE__);
 }
 
 void DCEL::devPatchInit() {
@@ -516,7 +501,7 @@ void DCEL::devTessInit() {
     cudaGraphicsUnmapResources(1, &dev_vboTessIdx, 0);
   
   if (!useVisualize)
-    devAlloc(&dev_tessVtx, 3*nFace*nSubVtx*sizeof(float));
+    devAlloc(&dev_tessVtx, 8*nFace*nSubVtx*sizeof(float));
   devAlloc(&dev_tessWgt, nFace*nSubVtx*sizeof(float));
 
 }
@@ -536,7 +521,7 @@ void DCEL::updateCoeff() {
     dim3 blkDim(4,64), blkCnt;
     blkCnt.x = (nBasis + blkDim.x - 1) / blkDim.x;
     blkCnt.y = (nVtx + blkDim.y - 1) / blkDim.y;
-    kUpdateCoeff<<<blkCnt,blkDim>>>(nBasis2, nVtx, bezier->dev_V, 1.0, dev_dv, dev_coeff);
+    kUpdateCoeff<<<blkCnt,blkDim>>>(nBasis2, nVtx, bezier->dev_V, 1.0, dev_dv, dev_coeff, 0.1f);
     checkCUDAError("kUpdateCoeff", __LINE__);
   }
 }
@@ -563,25 +548,21 @@ float DCEL::update() {
     cudaGraphicsResourceGetMappedPointer((void**)&dev_tessVtx, &nBytes, dev_vboTessVtx);
   }
   if (useTessSM) {
-    cudaMemset(dev_tessVtx, 0, 3 * nFace*nSubVtx*sizeof(float));
+    cudaMemset(dev_tessVtx, 0, 8 * nFace*nSubVtx*sizeof(float));
     cudaMemset(dev_tessWgt, 0, nFace*nSubVtx*sizeof(float));
 
-    blkDim.x = 64;
+    blkDim.x = 16;
     blkDim.y = 8;
-    blkDim.z = 1;
+    blkDim.z = 4;
     blkCnt.x = (nHe + blkDim.x - 1) / blkDim.x;
     blkCnt.y = (nSubVtx + blkDim.y - 1) / blkDim.y;
-    blkCnt.z = 1;
-    int smSize = (blkDim.x * nBasis2) * sizeof(float4);
-    if (useTessAltSM)
-      kTessVtxAltSM<<<blkCnt, blkDim, smSize>>>(nVtx, nHe, nSub, nSubVtx, nBasis2, degMin,
-          dev_heFaces, dev_bezPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx, dev_tessWgt);
-    else
-      kTessVtxSM<<<blkCnt, blkDim, smSize>>>(nVtx, nHe, nSub, nSubVtx, nBasis2, degMin,
-          dev_heFaces, dev_bezPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx, dev_tessWgt);
+    blkCnt.z = (8 + blkDim.z - 1) / blkDim.z;
+    int smSize = (blkDim.z * blkDim.x * nBasis2) * sizeof(float);
+    kTessVtxSM<<<blkCnt, blkDim, smSize>>>(nVtx, nHe, nSub, nSubVtx, nBasis2, degMin,
+        dev_heFaces, dev_bezPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx, dev_tessWgt);
     checkCUDAError("kTessVtxSM", __LINE__); 
 
-    blkDim.x = 64;
+    blkDim.x = 128;
     blkDim.y = 8;
     blkDim.z = 1;
     blkCnt.x = (nFace + blkDim.x - 1) / blkDim.x;
@@ -590,13 +571,13 @@ float DCEL::update() {
     kWeightScale<<<blkCnt, blkDim>>>(nFace, nSubVtx, dev_tessVtx, dev_tessWgt);
     checkCUDAError("kWeightScale", __LINE__);
   } else {
-    blkDim.x = 64;
-    blkDim.y = 8;
-    blkDim.z = 1;
+    blkDim.x = 32;
+    blkDim.y = 4;
+    blkDim.z = 8;
     blkCnt.x = (nFace + blkDim.x - 1) / blkDim.x;
     blkCnt.y = (nSubVtx + blkDim.y - 1) / blkDim.y;
-    blkCnt.z = 1;
-    cudaMemset(dev_tessVtx, 0, 3 * nFace*nSubVtx*sizeof(float));
+    blkCnt.z = (8 + blkDim.z - 1) / blkDim.z;
+    cudaMemset(dev_tessVtx, 0, 8 * nFace*nSubVtx*sizeof(float));
     kTessVtx<<<blkCnt, blkDim>>>(nVtx, nFace, nSub, nSubVtx, nBasis2, degMin,
       dev_heFaces, dev_bezPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx);
     checkCUDAError("kTessVtx", __LINE__);

@@ -89,7 +89,7 @@ void DCEL::getHeLoops() {
   // create a halfedge list ordered by both source vertex and loop sequence
   degMin = INT_MAX;
   degMax = INT_MIN;
-  for (int v1 = 0; v1 < vList.size()/3; v1++) {
+  for (int v1 = 0; v1 < nVtx; v1++) {
     int2 vRange;
     vRange.x = heLoops.size();
     for (int heIdx : loopMap[v1])
@@ -111,6 +111,8 @@ bool DCEL::objReadVtx(std::istream &fStream) {
     fStream >> p;
     vList.push_back(p);
   }
+  for (int i = 0; i < 5; i++)
+    vList.push_back(0.0f);
 
   return true;
 }
@@ -134,7 +136,7 @@ bool DCEL::objReadFace(std::istream &fStream) {
     if (vIdx >= 0)
       vIdxList.push_back(vIdx);
     else
-      vIdxList.push_back(vList.size() + vIdx + 1);
+      vIdxList.push_back(vList.size()/8 + vIdx + 1);
   }
   unsigned int N = vIdxList.size();
 
@@ -188,14 +190,14 @@ void DCEL::objRead(const char *fName) {
   }
 
   // check that vertex indices are valid
-  unsigned int N = vList.size()/3;
+  unsigned int N = vList.size()/8;
   for (const int4 &v : heFaces) {
     if (v.x < 0 || v.x >= N || v.y < 0 || v.y >= N)
       throw std::logic_error("DCEL: invalid vertex");
   }
 
   // get the vertex count
-  nVtx = vList.size()/3;
+  nVtx = vList.size()/8;
   nHe = heFaces.size();
   nFace = nHe / 3;
 
@@ -213,7 +215,7 @@ void DCEL::visInit() {
 
   printf("loading vtx vbo\n");
   glBindBuffer(GL_ARRAY_BUFFER, vboVtx);
-  glBufferData(GL_ARRAY_BUFFER, 3 * nVtx*sizeof(float), &vList[0], GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, 8 * nVtx*sizeof(float), &vList[0], GL_STATIC_DRAW);
 
   printf("loading fidx vbo\n");
   glBindBuffer(GL_ARRAY_BUFFER, vboIdx);
@@ -221,7 +223,7 @@ void DCEL::visInit() {
 
   printf("loading vtx tess vbo\n");
   glBindBuffer(GL_ARRAY_BUFFER, vboTessVtx);
-  glBufferData(GL_ARRAY_BUFFER, 3 * nFace * nSubVtx * sizeof(float), 0, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, 8 * nFace * nSubVtx * sizeof(float), 0, GL_STATIC_DRAW);
   cudaGraphicsGLRegisterBuffer(&dev_vboTessVtx, vboTessVtx, cudaGraphicsMapFlagsNone);
   checkCUDAError("cudaGraphicsGLRegisterBuffer", __LINE__);
 
@@ -237,26 +239,35 @@ void DCEL::draw(Shader *vShader, Shader *tShader) {
 	  glPointSize(1.0f);
 	  glLineWidth(2.0f);
 	  vShader->setUniform("uColor", 0.8f, 0.2f, 0.1f);
-	  vShader->bindVertexData("Position", vboVtx, SHADER_SSO(3,3,0));
-	  vShader->bindIndexData(vboIdx);
-	  glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-	  glDrawElements(GL_TRIANGLES, 3 * nFace, GL_UNSIGNED_INT, 0);
-	}
+    vShader->setUniform("nShade", false);
+    vShader->bindVertexData("Position", vboVtx, SHADER_SSO(3, 8, 0));
+    vShader->bindVertexData("Normal", vboVtx, SHADER_SSO(3, 8, 3));
+    vShader->bindVertexData("UV", vboVtx, SHADER_SSO(2, 8, 6));
+    vShader->bindIndexData(vboIdx);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glDrawElements(GL_TRIANGLES, 3 * nFace, GL_UNSIGNED_INT, 0);
 
-  glPointSize(3.0f);
-  glLineWidth(1.0f);
-  vShader->setUniform("uColor", 0.3, 0.6f, 0.0f);
-  vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3,3,0));
-  vShader->bindIndexData(vboTessIdx);
-  glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-  glDrawElements(GL_TRIANGLES, 3*nFace*nSubFace, GL_UNSIGNED_INT, 0);
-  glDrawElements(GL_POINTS, 3*nFace*nSubFace, GL_UNSIGNED_INT, 0);
+    glPointSize(3.0f);
+    glLineWidth(1.0f);
+    vShader->setUniform("uColor", 0.3, 0.3f, 0.0f);
+    vShader->setUniform("nShade", false);
+    vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3, 8, 0));
+    vShader->bindVertexData("Normal", vboTessVtx, SHADER_SSO(3, 8, 3));
+    vShader->bindVertexData("UV", vboTessVtx, SHADER_SSO(2, 8, 6));
+    vShader->bindIndexData(vboTessIdx);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glDrawElements(GL_TRIANGLES, 3 * nFace*nSubFace, GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_POINTS, 3 * nFace*nSubFace, GL_UNSIGNED_INT, 0);
+	}
 
   if (visFill) {
     glPointSize(3.0f);
     glLineWidth(1.0f);
-    vShader->setUniform("uColor", 0.3, 0.3f, 0.3f);
-    vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3, 3, 0));
+    vShader->setUniform("uColor", 0.4f, 0.4f, 0.4f);
+    vShader->setUniform("nShade", true);
+    vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3, 8, 0));
+    vShader->bindVertexData("Normal", vboTessVtx, SHADER_SSO(3, 8, 3));
+    vShader->bindVertexData("UV", vboTessVtx, SHADER_SSO(2, 8, 6));
     vShader->bindIndexData(vboTessIdx);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glDrawElements(GL_TRIANGLES, 3 * nFace*nSubFace, GL_UNSIGNED_INT, 0);

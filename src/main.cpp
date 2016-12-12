@@ -3,6 +3,8 @@
 #include <cmath>
 #include <ctime>
 
+#include <algorithm>
+
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -267,5 +269,7 @@ void updateCamera() {
   projection = projection * view;
 
   shader->setUniform("model", projection);
+  shader->setUniform("invTrModel", glm::inverse(glm::transpose(projection)));
+  shader->setUniform("CamDir", -camPos);
 }
 
