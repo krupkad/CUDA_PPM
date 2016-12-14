@@ -57,12 +57,13 @@ int cudaProbe() {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc < 4) {
-    printf("usage: %s nBasis nSamp objFile\n", argv[0]);
+  if (argc < 5) {
+    printf("usage: %s nBasis nSamp nSub objFile\n", argv[0]);
     return 0;
   }
   int nBasis = atoi(argv[1]);
   int nSamp = atoi(argv[2]);
+  int nSub = atoi(argv[3]);
 
   // initialize window
   GLFWwindow *window = nullptr;
@@ -101,7 +102,7 @@ int main(int argc, char *argv[]) {
     updateCamera();
     printGLErrorLog();
   }  
-  dcel = new DCEL(argv[3], window != nullptr);
+  dcel = new DCEL(argv[4], window != nullptr);
   
   // check CUDA devices
   int nDevices = cudaProbe();
@@ -111,12 +112,12 @@ int main(int argc, char *argv[]) {
   }
 
   // actually build the dcel
-  dcel->rebuild(nBasis, nSamp);
+  dcel->rebuild(nBasis, nSamp, nSub);
   printf("created dcel\n");
 
   int nbFrames = 0;
   double lastTime = window ? glfwGetTime() : double(clock())/CLOCKS_PER_SEC;
-  double dt = 0, alpha = .98;
+  double dt = 0;
   while(!(window && glfwWindowShouldClose(window))) {
     // update the DCEL
     dt += dcel->update();

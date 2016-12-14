@@ -25,7 +25,7 @@ class DCEL {
     DCEL(const char *fName, bool glVis = true);
     ~DCEL();
 
-    void rebuild(int nBasis, int nGrid);
+    void rebuild(int nBasis, int nGrid, int nSub);
 
     float update();
     void draw(Shader *vShader, Shader *tShader);

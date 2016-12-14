@@ -33,9 +33,14 @@ DCEL::~DCEL() {
   visFree();
 }
 
-void DCEL::rebuild(int nBasis, int nGrid) {
+void DCEL::rebuild(int nBasis, int nGrid, int nSub) {
   objRead(inFile.c_str());
   printf("read done\n");
+
+  // tesselation controls
+  this->nSub = nSub;
+  this->nSubFace = nSub*nSub;
+  this->nSubVtx = (nSub + 1)*(nSub + 2) / 2;
 
   if (useVisualize) {
     visInit();
@@ -200,11 +205,6 @@ void DCEL::objRead(const char *fName) {
   nVtx = vList.size()/8;
   nHe = heFaces.size();
   nFace = nHe / 3;
-
-  // tesselation controls
-  nSub = 3;
-  nSubFace = nSub*nSub;
-  nSubVtx = (nSub + 1)*(nSub + 2) / 2;
 }
 
 void DCEL::visInit() {
