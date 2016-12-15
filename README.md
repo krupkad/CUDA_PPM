@@ -65,5 +65,8 @@ There was also a clear correlation between mesh size and execution time, as well
 ### Second Round - Stress
 We then included all eight vertex attributes (XYZ position, XYZ normal, UV texture), which necessitated a change in SM use, as we originally
 read and held all attributes' coefficients in memory at once. Now, only one set was read at a time, and we parallelized over attribute index.
+Tests were conducted on a C2075, using degree-4 Bezier patches.
+
+![](img/runtime2_plot.png)
 
 
