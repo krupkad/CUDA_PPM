@@ -83,9 +83,11 @@ that for "sufficiently large" inputs, SM might again become useful.
 ## Demos
 
 ![](img/knot_anim.gif)
+
 Colors correspond to normal direction. Note that the normals are much smoother than would be allowed by the base mesh, shown in red.
 
 ![](img/knot_spot.png)
+
 View of the subdivided topology, with visible shading. Smoothness of the PPM gives the light/dark boundary more refinement than the base mesh provides.
 
 
