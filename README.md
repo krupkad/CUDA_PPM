@@ -31,4 +31,8 @@ the PPM algorithm is highly parallelizable. The algorithm's outline is as follow
   * Generate new topology (but not geometry). We subdivide each face like so: ![](img/tri_tess.png)
   * Precalculate any constant data. We use Bezier surfaces, so this includes evaluating all necessary
     polynomials at all points of interest.
+* Main Loop:
+  * Get/calculate any changes to vertex data. We use properties of Bernstein polynomials to move vertices
+    without needing to fully re-fit Bezier surfaces.
+  * For each generated point, evaluate its PPM position/normal/UV.
 
