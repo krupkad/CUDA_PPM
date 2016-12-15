@@ -27,12 +27,27 @@ the PPM algorithm is highly parallelizable. The algorithm's outline is as follow
 
 * Pre-processing:
   * Build two lists of half-edges, one sorted by origin, one sorted by face.
-  * Additionally, sort each set of half-edges with the same vertex in clockwise order.
-  * Generate new topology (but not geometry). We subdivide each face like so: ![](img/tri_tess.png)
+    Additionally, sort each set of half-edges with the same vertex in clockwise order.
+  * Generate new topology (but not geometry). We subdivide each face.
   * Precalculate any constant data. We use Bezier surfaces, so this includes evaluating all necessary
     polynomials at all points of interest.
 * Main Loop:
   * Get/calculate any changes to vertex data. We use properties of Bernstein polynomials to move vertices
     without needing to fully re-fit Bezier surfaces.
   * For each generated point, evaluate its PPM position/normal/UV.
+
+## Performance Analysis
+
+Our first round of analysis was to check the effects of various optimizations.
+* Shared Memory: Sampling Bezier surfaces requires numerous repeated memory accesses, suggesting
+  the use of shared memory to reduce read time.
+* Textures: The tessellation pattern is known during preprocessing and never changes, so the local coordinates
+  and polynomial values for each patch may be obtained faster if stored and accessed through CUDA's texture
+  subsystem.
+* Rank-1 Updating: Naively, the coefficients for each patch must be re-fit each time the vertices change. For a
+  least-squares fit, this requires a large matrix multiplication. If the shape of each vertex's deformation is
+  proportional to a singular vector of this matrix, this can be replaced by a less computationally intensive
+  rank-1 update.
+
+![](optim_plot.png)
 
