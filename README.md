@@ -49,5 +49,5 @@ Our first round of analysis was to check the effects of various optimizations.
   proportional to a singular vector of this matrix, this can be replaced by a less computationally intensive
   rank-1 update.
 
-![](optim_plot.png)
+![](img/optim_plot.png)
 
