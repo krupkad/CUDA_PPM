@@ -13,5 +13,6 @@ with CUDA, and use them to efficiently generate and manipulate additional detail
 ## Overview
 PPMs work by associating a smooth, local approximation of the surface to each vertex. Then, when the position
 of a point P on the approximation is needed, the three nearest patches are sampled and weighted by their distance to P.
+
 ![](img/diagram.png)
 
