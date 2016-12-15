@@ -38,6 +38,7 @@ the PPM algorithm is highly parallelizable. The algorithm's outline is as follow
 
 ## Performance Analysis
 
+### First Round - Optimization
 Our first round of analysis was to check the effects of various optimizations. The test platform was a Quadro K620,
 computing only the generated vertex positions. We focused on the effects of Bezier patch degree and vertex count,
 and kept the subdivision level at 10 subfaces per face.
@@ -59,8 +60,9 @@ but was nonsubstatial in comparison to other optimizations (~10%). The total imp
 helped more in the degree-8 case, as more redundant reads of Bezier coefficients from main memory were prevented.
 
 ![](img/runtime1_plot.png)
-There was also a clear correlation between mesh size and execution time.
+There was also a clear correlation between mesh size and execution time, as well as the degree of the Bezier patches.
 
+### Second Round - Stress
 We then included all eight vertex attributes (XYZ position, XYZ normal, UV texture), which necessitated a change in SM use, as we originally
 read and held all attributes' coefficients in memory at once. Now, only one set was read at a time, and we parallelized over attribute index.
 
