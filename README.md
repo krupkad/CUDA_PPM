@@ -26,9 +26,9 @@ Since the approximations are built from data that is local to each vertex, and a
 the PPM algorithm is highly parallelizable. The algorithm's outline is as follows:
 
 * Pre-processing:
-** Build two lists of half-edges, one sorted by origin, one sorted by face.
-** Additionally, sort each set of half-edges with the same vertex in clockwise order.
-** Generate new topology (but not geometry). We subdivide each face like so: ![](img/tri_tess.png)
-** Precalculate any constant data. We use Bezier surfaces, so this includes evaluating all necessary
-** polynomials at all points of interest.
+  * Build two lists of half-edges, one sorted by origin, one sorted by face.
+  * Additionally, sort each set of half-edges with the same vertex in clockwise order.
+  * Generate new topology (but not geometry). We subdivide each face like so: ![](img/tri_tess.png)
+  * Precalculate any constant data. We use Bezier surfaces, so this includes evaluating all necessary
+    polynomials at all points of interest.
 
