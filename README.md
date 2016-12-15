@@ -63,10 +63,25 @@ helped more in the degree-8 case, as more redundant reads of Bezier coefficients
 There was also a clear correlation between mesh size and execution time, as well as the degree of the Bezier patches.
 
 ### Second Round - Stress
-We then included all eight vertex attributes (XYZ position, XYZ normal, UV texture), which necessitated a change in SM use, as we originally
-read and held all attributes' coefficients in memory at once. Now, only one set was read at a time, and we parallelized over attribute index.
-Tests were conducted on a C2075, using degree-4 Bezier patches.
+We then included all eight vertex attributes (XYZ position, XYZ normal, UV texture), which necessitated a change in SM use. Originally, we
+read and held all attributes' coefficients in memory at once. With eight attributes, however, the required amount of SM led to unacceptably
+few blocks being scheduled, if a kernel launch succeeded at all. Now, only one set was read at a time, and we additionally parallelized over attribute index.
+Tests were conducted on a C2075, using degree-4 Bezier patches. Numbers in the legend are the number of vertices in the mesh being tested.
 
 ![](img/runtime2_plot.png)
+
+All runs were slower than before, due to ~2.5x more work being done to process the additional attributes. Runtime increased steadily
+as more faces were generated. At peak, the C2075 was generating ~23.6 million triangles per second before exhausting memory or kernel launch time.
+Notably, the implementation can generate geometry faster than it can process it -- it is substantially cheaper to manipulate a rough mesh and fill in
+details from a PPM than to manipulate a detailed mesh of similar complexity.
+
+Notably, shared memory either did not provide any improvement or produced a slow-down. Likely, the combination of parallelizing over attribute
+and the amount of additional data combined to make the overhead of loading/unloading SM substantial enough to cause degradation. It is possible
+that for "sufficiently large" inputs, SM might again become useful.
+
+## Demos
+
+![](img/knot_anim.gif)
+![](img/knot_spot.png)
 
 
