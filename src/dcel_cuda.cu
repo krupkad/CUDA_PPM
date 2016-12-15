@@ -229,7 +229,6 @@ __global__ void kTessVtxSM(int nVtx, int nHe, int nSub, int nSubVtx, int nBasis2
     atomicAdd(wgt, w);
 }
 
-
 __global__ void kGetNormals(int nHe, const int4 *heLoops, float *vData) {
   int heIdx = threadIdx.x + blockIdx.x * blockDim.x;
   if (heIdx >= nHe)
@@ -455,19 +454,13 @@ void DCEL::devMeshInit() {
   // fill in remaining halfedge data
   devAlloc(&dev_vBndList, nVtx*sizeof(int2));
   cudaMemset(dev_vBndList, 0xFF, nVtx*sizeof(int2));
-  dim3 blkCnt((nHe + 128 - 1) / 128);
-  dim3 blkDim(128);
+  dim3 blkCnt((nHe + 1024 - 1) / 1024);
+  dim3 blkDim(1024);
   kGetLoopBoundaries<<<blkCnt, blkDim>>>(nHe, dev_heLoops, dev_vBndList);
   kGetHeRootInfo<<<blkCnt, blkDim>>>(nHe, dev_vBndList, dev_heLoops, dev_heLoops);
   kGetHeRootInfo<<<blkCnt, blkDim>>>(nHe, dev_vBndList, dev_heFaces, dev_heLoops);
 
   // recalculate normals
-  blkDim.x = 1024;
-  blkDim.y = 1;
-  blkDim.z = 1;
-  blkCnt.x = (nHe + blkDim.x - 1) / blkDim.x;
-  blkCnt.y = 1;
-  blkCnt.z = 1;
   kGetNormals<<<blkCnt, blkDim>>>(nHe, dev_heLoops, dev_vList);
   checkCUDAError("kGetNormals", __LINE__);
 }
@@ -545,15 +538,11 @@ void DCEL::devInit() {
 }
 
 void DCEL::updateCoeff() {
-  if (useBlasUpdate) {
-    bezier->updateCoeff(nVtx, dev_coeff, dev_dv);
-  } else {
-    dim3 blkDim(16,64), blkCnt;
-    blkCnt.x = (nBasis2 + blkDim.x - 1) / blkDim.x;
-    blkCnt.y = (nVtx + blkDim.y - 1) / blkDim.y;
-    kUpdateCoeff<<<blkCnt,blkDim>>>(nBasis2, nVtx, bezier->dev_V, 1.0, dev_dv, dev_coeff, 0.1f);
-    checkCUDAError("kUpdateCoeff", __LINE__);
-  }
+  dim3 blkDim(16,64), blkCnt;
+  blkCnt.x = (nBasis2 + blkDim.x - 1) / blkDim.x;
+  blkCnt.y = (nVtx + blkDim.y - 1) / blkDim.y;
+  kUpdateCoeff<<<blkCnt,blkDim>>>(nBasis2, nVtx, bezier->dev_V, 1.0, dev_dv, dev_coeff, 0.1f);
+  checkCUDAError("kUpdateCoeff", __LINE__);
 }
 
 float DCEL::update() {
@@ -568,8 +557,6 @@ float DCEL::update() {
   // generate/update bezier coefficients
   if (useSvdUpdate)
     updateCoeff();
-  else 
-    genCoeff();
 
   // calculate new vertex positions
   if (useVisualize) {
@@ -581,9 +568,9 @@ float DCEL::update() {
     cudaMemset(dev_tessVtx, 0, 8 * nFace*nSubVtx*sizeof(float));
     cudaMemset(dev_tessWgt, 0, nFace*nSubVtx*sizeof(float));
 
-    blkDim.x = 16;
-    blkDim.y = 8;
-    blkDim.z = 4;
+    blkDim.x = 8;
+    blkDim.y = 16;
+    blkDim.z = 8;
     blkCnt.x = (nHe + blkDim.x - 1) / blkDim.x;
     blkCnt.y = (nSubVtx + blkDim.y - 1) / blkDim.y;
     blkCnt.z = (8 + blkDim.z - 1) / blkDim.z;
@@ -592,8 +579,8 @@ float DCEL::update() {
         dev_heFaces, dev_bezPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx, dev_tessWgt);
     checkCUDAError("kTessVtxSM", __LINE__); 
 
-    blkDim.x = 128;
-    blkDim.y = 8;
+    blkDim.x = 32;
+    blkDim.y = 32;
     blkDim.z = 1;
     blkCnt.x = (nFace + blkDim.x - 1) / blkDim.x;
     blkCnt.y = (nSubVtx + blkDim.y - 1) / blkDim.y;

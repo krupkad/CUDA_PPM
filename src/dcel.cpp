@@ -17,11 +17,9 @@
 
 DCEL::DCEL(const char *fName, bool glVis) :
   useTessSM(false),
-  useTessAltSM(false),
   canUseTexObjs(true),
   useSampTex(true),
   useSvdUpdate(true),
-  useBlasUpdate(false),
   useVisualize(glVis),
   visFill(true),
   visSkel(true),

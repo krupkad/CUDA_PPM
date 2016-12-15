@@ -37,10 +37,8 @@ class DCEL {
 
     // optimization options
     bool useTessSM;
-    bool useTessAltSM;
     bool useSampTex;
     bool useSvdUpdate;
-    bool useBlasUpdate;
 
     // functionality flags
     bool canUseTexObjs;

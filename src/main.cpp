@@ -172,60 +172,50 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
   if (key == GLFW_KEY_Q && action == GLFW_PRESS) {
     glfwSetWindowShouldClose(window, GL_TRUE);
   }
+
+  //// visualization
+  // F = show PPM surface
+  // S = show input skeleton
+  // N = color using normals
   if (key == GLFW_KEY_F && action == GLFW_PRESS) {
     dcel->visFill = !dcel->visFill;
   }
   if (key == GLFW_KEY_S && action == GLFW_PRESS) {
     dcel->visSkel = !dcel->visSkel;
+  } 
+  if (key == GLFW_KEY_N && action == GLFW_PRESS) {
+    dcel->visDbgNormals = !dcel->visDbgNormals;
   }
+
+  //// functional controls
+  // 1 = SM use for vertex computation
+  // 2 = keep evaluated bezier values in textures
   if (key == GLFW_KEY_1 && action == GLFW_PRESS) {
     dcel->useTessSM = !dcel->useTessSM;
     if (dcel->useTessSM) {
-      if (dcel->useTessAltSM)
-        printf("using full-SM tessVtx\n");
-      else
-        printf("using partial-SM tessVtx\n");
+      printf("using full-SM tessVtx\n");
     } else {
       printf("using non-SM tessVtx\n");
     }
-  }
+  } 
   if (key == GLFW_KEY_2 && action == GLFW_PRESS) {
-    dcel->useTessAltSM = !dcel->useTessAltSM;
-    if (dcel->useTessAltSM)
-      printf("using full-SM tessVtx\n");
-    else
-      printf("using partial-SM tessVtx\n");
-  }
-  if (key == GLFW_KEY_3 && action == GLFW_PRESS) {
     dcel->useSampTex = !dcel->useSampTex;
     if (dcel->useSampTex)
       printf("using texture sampling patterns\n");
     else
       printf("using computed sampling patterns\n");
   }
-  if (key == GLFW_KEY_4 && action == GLFW_PRESS) {
+
+  // D = toggle deformation
+  if (key == GLFW_KEY_D && action == GLFW_PRESS) {
     dcel->useSvdUpdate = !dcel->useSvdUpdate;
     if (dcel->useSvdUpdate)
-      printf("using rank-1 updating\n");
+      printf("using deformation\n");
     else
-      printf("using rank-n updating\n");
+      printf("using static\n");
   }
-  if (key == GLFW_KEY_5 && action == GLFW_PRESS) {
-    dcel->useBlasUpdate = !dcel->useBlasUpdate;
-    if (dcel->useBlasUpdate)
-      printf("using cublas updating\n");
-    else
-      printf("using kernel updating\n");
-  }
-
-  if (key == GLFW_KEY_N && action == GLFW_PRESS) {
-    dcel->visDbgNormals = !dcel->visDbgNormals;
-    if (dcel->visDbgNormals)
-      printf("using normal debug view\n");
-    else
-      printf("using regular view\n");
-  }
-
+ 
+  // I,J,K,L = camera controls
   if (key == GLFW_KEY_J && action == GLFW_PRESS) {
     phi += M_PI/18.0;
     updateCamera();
