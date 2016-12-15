@@ -38,7 +38,9 @@ the PPM algorithm is highly parallelizable. The algorithm's outline is as follow
 
 ## Performance Analysis
 
-Our first round of analysis was to check the effects of various optimizations.
+Our first round of analysis was to check the effects of various optimizations. The test platform was a Quadro K620,
+computing only the generated vertex positions. We focused on the effects of Bezier patch degree and vertex count,
+and kept the subdivision level at 10 subfaces per face.
 * Shared Memory: Sampling Bezier surfaces requires numerous repeated memory accesses, suggesting
   the use of shared memory to reduce read time.
 * Textures: The tessellation pattern is known during preprocessing and never changes, so the local coordinates
@@ -50,4 +52,16 @@ Our first round of analysis was to check the effects of various optimizations.
   rank-1 update.
 
 ![](img/optim_plot.png)
+
+Testing shows that, as expected, shared memory use substantially improved computation time with an ~35% speedup. Rank-1 updating
+was next most significant, showing on the order of a 25% improvement. Finally, the use of textures did help,
+but was nonsubstatial in comparison to other optimizations (~10%). The total improvement was approximately 60%. Also as expected, shared memory
+helped more in the degree-8 case, as more redundant reads of Bezier coefficients from main memory were prevented.
+
+![](img/runtime1_plot.png)
+There was also a clear correlation between mesh size and execution time.
+
+We then included all eight vertex attributes (XYZ position, XYZ normal, UV texture), which necessitated a change in SM use, as we originally
+read and held all attributes' coefficients in memory at once. Now, only one set was read at a time, and we parallelized over attribute index.
+
 
