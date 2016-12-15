@@ -396,7 +396,7 @@ void DCEL::genCoeff() {
   // generate mesh sample points
   blkDim.x = 4;
   blkDim.y = 4;
-  blkDim.z = 64;
+  blkDim.z = 32;
   blkCnt.x = (nGrid + blkDim.x - 1) / blkDim.x;
   blkCnt.y = (nGrid + blkDim.y - 1) / blkDim.y;
   blkCnt.z = (nVtx + blkDim.z - 1) / blkDim.z;
@@ -603,7 +603,7 @@ float DCEL::update() {
   } else {
     blkDim.x = 32;
     blkDim.y = 4;
-    blkDim.z = 8;
+    blkDim.z = 4;
     blkCnt.x = (nFace + blkDim.x - 1) / blkDim.x;
     blkCnt.y = (nSubVtx + blkDim.y - 1) / blkDim.y;
     blkCnt.z = (8 + blkDim.z - 1) / blkDim.z;

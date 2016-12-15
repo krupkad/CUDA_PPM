@@ -33,6 +33,7 @@ class DCEL {
     // visualization options
     bool visSkel;
     bool visFill;
+    bool visDbgNormals;
 
     // optimization options
     bool useTessSM;

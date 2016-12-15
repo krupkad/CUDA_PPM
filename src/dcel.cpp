@@ -16,15 +16,16 @@
 
 
 DCEL::DCEL(const char *fName, bool glVis) :
-  useTessSM(true),
-  useTessAltSM(true),
+  useTessSM(false),
+  useTessAltSM(false),
   canUseTexObjs(true),
   useSampTex(true),
   useSvdUpdate(true),
   useBlasUpdate(false),
   useVisualize(glVis),
-  visFill(false),
+  visFill(true),
   visSkel(true),
+  visDbgNormals(false),
   inFile(fName)
 {}
 
@@ -265,6 +266,7 @@ void DCEL::draw(Shader *vShader, Shader *tShader) {
     glLineWidth(1.0f);
     vShader->setUniform("uColor", 0.4f, 0.4f, 0.4f);
     vShader->setUniform("nShade", true);
+    vShader->setUniform("dbgNormals", visDbgNormals);
     vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3, 8, 0));
     vShader->bindVertexData("Normal", vboTessVtx, SHADER_SSO(3, 8, 3));
     vShader->bindVertexData("UV", vboTessVtx, SHADER_SSO(2, 8, 6));

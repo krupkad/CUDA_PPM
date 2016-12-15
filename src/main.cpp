@@ -140,6 +140,7 @@ int main(int argc, char *argv[]) {
     nbFrames++;
     if (currentTime - lastTime >= 1.0){
        printf("%.1f fps (dt = %.3g ms)\n", double(nbFrames)/(currentTime - lastTime), dt/nbFrames);
+       fflush(stdout);
        nbFrames = 0;
        dt = 0.0f;
        lastTime += 1.0;
@@ -215,6 +216,14 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
       printf("using cublas updating\n");
     else
       printf("using kernel updating\n");
+  }
+
+  if (key == GLFW_KEY_N && action == GLFW_PRESS) {
+    dcel->visDbgNormals = !dcel->visDbgNormals;
+    if (dcel->visDbgNormals)
+      printf("using normal debug view\n");
+    else
+      printf("using regular view\n");
   }
 
   if (key == GLFW_KEY_J && action == GLFW_PRESS) {
