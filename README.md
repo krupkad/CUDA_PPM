@@ -38,6 +38,10 @@ the PPM algorithm is highly parallelizable. The algorithm's outline is as follow
 
 ## Performance Analysis
 
+### Zeroth Round - CPU
+A CPU implementation was provided by the authors of the original PPM paper. It was prohibitively slow to test, taking
+~2s for a 400 vertex mesh, and ~10 minutes for 100k vertices.
+
 ### First Round - Optimization
 Our first round of analysis was to check the effects of various optimizations. The test platform was a Quadro K620,
 computing only the generated vertex positions. We focused on the effects of Bezier patch degree and vertex count,
