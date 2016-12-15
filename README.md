@@ -73,7 +73,8 @@ Tests were conducted on a C2075, using degree-4 Bezier patches. Numbers in the l
 All runs were slower than before, due to ~2.5x more work being done to process the additional attributes. Runtime increased steadily
 as more faces were generated. At peak, the C2075 was generating ~23.6 million triangles per second before exhausting memory or kernel launch time.
 Notably, the implementation can generate geometry faster than it can process it -- it is substantially cheaper to manipulate a rough mesh and fill in
-details from a PPM than to manipulate a detailed mesh of similar complexity.
+details from a PPM than to manipulate a detailed mesh of similar complexity. Also critically, deformation incurs nearly zero overhead (~10us) -- the
+full runtime is heavily dominated by PPM computation and not base-mesh-only events.
 
 Notably, shared memory either did not provide any improvement or produced a slow-down. Likely, the combination of parallelizing over attribute
 and the amount of additional data combined to make the overhead of loading/unloading SM substantial enough to cause degradation. It is possible
@@ -82,6 +83,9 @@ that for "sufficiently large" inputs, SM might again become useful.
 ## Demos
 
 ![](img/knot_anim.gif)
+Colors correspond to normal direction. Note that the normals are much smoother than would be allowed by the base mesh, shown in red.
+
 ![](img/knot_spot.png)
+View of the subdivided topology, with visible shading. Smoothness of the PPM gives the light/dark boundary more refinement than the base mesh provides.
 
 
