@@ -249,7 +249,7 @@ void printGLErrorLog()
 }
 
 void Shader::use() {
-  if(inUse != this && hasProgram) {
+  if(hasProgram) {
     glUseProgram(program);
     inUse = this;
   }

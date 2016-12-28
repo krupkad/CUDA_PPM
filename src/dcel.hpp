@@ -78,6 +78,7 @@ class DCEL {
 
     // GL visualization data
     bool useVisualize;
+    unsigned int vaoBase, vaoTess;
 	  unsigned int vboIdx, vboVtx;
 	  unsigned int vboTessIdx, vboTessVtx;
 	  cudaGraphicsResource *dev_vboTessIdx, *dev_vboTessVtx;

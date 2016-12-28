@@ -43,6 +43,10 @@ set(LIBF2C_INCLUDE_DIR "external/include")
 set(LIBF2C_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
 find_library(LIBF2C_LIBRARY "f2c" HINTS "${LIBF2C_LIBRARY_DIR}")
 
+set(NANOGUI_INCLUDE_DIR "external/include")
+set(NANOGUI_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
+find_library(NANOGUI_LIBRARY "nanogui" HINTS "${NANOGUI_LIBRARY_DIR}")
+
 set(CORELIBS
     "${GLFW_LIBRARY}"
     "${OPENGL_LIBRARY}"
@@ -50,6 +54,7 @@ set(CORELIBS
     "${LAPACK_LIBRARY}"
     "${BLAS_LIBRARY}"
     "${LIBF2C_LIBRARY}"
+    "${NANOGUI_LIBRARY}"
 )
 
 # Enable C++11 for host code
