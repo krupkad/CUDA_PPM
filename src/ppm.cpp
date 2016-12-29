@@ -15,7 +15,7 @@
 #include <algorithm>
 
 
-PPM::PPM(const char *fName, bool glVis) :
+PPM::PPM(bool glVis) :
   useTessSM(false),
   canUseTexObjs(true),
   useSampTex(true),
@@ -24,16 +24,30 @@ PPM::PPM(const char *fName, bool glVis) :
   visFill(true),
   visSkel(true),
   visDbgNormals(true),
-  inFile(fName)
+  inFile(""),
+  isBuilt(false)
 {}
 
 PPM::~PPM() {
-  devFree();
-  visFree();
+  if (isBuilt) {
+    devFree();
+    visFree();
+  }
 }
 
-void PPM::rebuild(int nBasis, int nGrid, int nSub) {
-  objRead(inFile.c_str());
+void PPM::rebuild(const char *fName, int nBasis, int nGrid, int nSub) {
+  if (isBuilt) {
+    vList.clear();
+    heFaces.clear();
+    heLoops.clear();
+    fList.clear();
+    loopMap.clear();
+    devFree();
+    visFree();
+  }
+  
+  objRead(fName);
+  inFile = fName;
   printf("read done\n");
 
   // tesselation controls
@@ -52,6 +66,8 @@ void PPM::rebuild(int nBasis, int nGrid, int nSub) {
   this->nGrid2 = nGrid*nGrid;
   devInit();
   printf("dev done\n");
+  
+  isBuilt = true;
 }
 
 // sort half edges a) by source, b) in patch boundary order
@@ -261,6 +277,9 @@ void PPM::visInit() {
 }
 
 void PPM::draw(Shader *vShader, Shader *tShader) {
+  if (!isBuilt)
+    return;
+  
 	if (visSkel) {
 	  glPointSize(1.0f);
 	  glLineWidth(2.0f);
@@ -315,9 +334,13 @@ void PPM::visFree() {
   glDeleteBuffers(1,&vboVtx); // vList.size() vertices (3 floats)
   glDeleteBuffers(1,&vboIdx); // vList.size() vertices (3 floats)
   cudaGraphicsUnregisterResource(dev_vboTessIdx);
+  checkCUDAError("GraphicsUnregisterResource", __LINE__);
   cudaGraphicsUnregisterResource(dev_vboTessVtx);
+  checkCUDAError("GraphicsUnregisterResource", __LINE__);
   glDeleteBuffers(1, &vboTessVtx); // vList.size() vertices (3 floats)
   glDeleteBuffers(1, &vboTessIdx); // vList.size() vertices (3 floats)
+  glDeleteVertexArrays(1, &vaoBase); // vList.size() vertices (3 floats)
+  glDeleteVertexArrays(1, &vaoTess); // vList.size() vertices (3 floats)
 }
 
 

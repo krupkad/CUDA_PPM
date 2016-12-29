@@ -616,6 +616,7 @@ float PPM::update() {
 void PPM::devFree() {
   for (void *p : allocList)
     cudaFree(p);
+  allocList.clear();
 
   delete bezier;
 }

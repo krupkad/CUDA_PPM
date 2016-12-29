@@ -9,7 +9,7 @@
 
 #include <cuda_runtime.h>
 
-#include "dcel.hpp"
+#include "ppm.hpp"
 
 template <typename T, typename T2 = typename LA<T>::T2, typename T4 = typename LA<T>::T4 >
 __device__ void kBnBasis(int nBasis, const T2 &p, const T2 &np, T2 *work) {
@@ -68,7 +68,6 @@ struct Bezier {
     T *U, *VT, *S;
     T *dev_V;
     T *dev_LLS_proj;
-    T *dev_coeff;
     T2 *dev_grid;
 
     void free();
@@ -155,10 +154,6 @@ void Bezier<T>::free() {
   if (dev_LLS_proj != nullptr) {
     cudaFree(dev_LLS_proj);
     dev_LLS_proj = nullptr;
-  }
-  if (dev_coeff != nullptr) {
-    cudaFree(dev_coeff);
-    dev_coeff = nullptr;
   }
   cublasDestroy(handle);
 }

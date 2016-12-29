@@ -42,7 +42,7 @@ private:
 };
 
 int cudaProbe(PPM *ppm) {
-	int nDevices;
+  int nDevices;
   cudaGetDeviceCount(&nDevices);
   for (int i = 0; i < nDevices; i++) {
     cudaDeviceProp prop;
@@ -65,29 +65,30 @@ int cudaProbe(PPM *ppm) {
 
 class PpmGui : public nanogui::Screen {
 public:
-  PPM *ppm;
-
-  PpmGui(const char *src, int w, int h) :
-    nanogui::Screen(nanogui::Vector2i(w, h), (const char *)"PPM Demo"),
+  PpmGui(int w, int h) :
+    nanogui::Screen(nanogui::Vector2i(w, h), "PPM Demo"),
+    ppm(nullptr),
     xSize(w), ySize(h),
     leftMousePressed(false), rightMousePressed(false),
     fovy(M_PI / 4), zNear(0.1), zFar(100.0),
     theta(1.22), phi(-0.7), zoom(5.0),
-    ppmTime(0.0), fpsTime(0.0), nbFrames(0)
+    ppmTime(0.0), fpsTime(0.0), nbFrames(0),
+    fName(""), nBasis(4), nSamp(4), nSub(2)
   {
     using namespace nanogui;
 
     printf("PpmGui: creating window\n");
-    Widget *window = new Window(this);
+    Widget *window = new Window(this, "");
     window->setPosition(Vector2i(0,0));
-    window->setLayout(new GroupLayout()); 
+    Layout *wLayout = new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 5);
+    window->setLayout(wLayout); 
 
     printf("PpmGui: initialize glew\n");
     glewExperimental = GL_TRUE;
     glewInit();
 
     printf("PpmGui: creating ppm\n");
-    ppm = new PPM(src, true);
+    ppm = new PPM(true);
 
     printf("PpmGui: compiling shader\n");
     shader = new Shader();
@@ -98,15 +99,9 @@ public:
     glDepthFunc(GL_LEQUAL);
     updateCamera();
 
-    printf("PpmGui: creating canvas\n");
-    canvas = new PpmCanvas(ppm, shader, window);
-    canvas->setBackgroundColor({ 0, 0, 0, 255 });
-    canvas->setDrawBorder(false);
-    canvas->setSize({ w - 25, h  - 75 });
-
     printf("PpmGui: creating UI\n");
-    Widget *tools = new Widget(window);
-    tools->setLayout(new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 5));
+    tools = new Widget(window);
+    tools->setLayout(new GroupLayout(5));
 
     CheckBox *c0 = new CheckBox(tools, "Show Wireframe");
     c0->setChecked(ppm->visSkel);
@@ -119,15 +114,80 @@ public:
     CheckBox *c2 = new CheckBox(tools, "Show Surface");
     c2->setChecked(ppm->visFill);
     c2->setCallback([this](bool value) { ppm->visFill = value; });
+    
+    new Label(tools, "nBasis");
+    IntBox<int> *c3 = new IntBox<int>(tools, nBasis);
+    new Label(tools, "nSamp");
+    IntBox<int> *c4 = new IntBox<int>(tools, nSamp);
+    new Label(tools, "nSub");
+    IntBox<int> *c5 = new IntBox<int>(tools, nSub);
+    
+    c3->setMinValue(3);
+    c3->setCallback([this,c4](int value) { 
+      nBasis = value;
+      nSamp = std::max(nBasis, nSamp);
+      c4->setValue(nSamp);
+      c4->setMinValue(nBasis);
+      canvas->setVisible(false);
+      ppm->rebuild(fName.c_str(), nBasis, nSamp, nSub);
+      canvas->setVisible(true);
+    });
+    c3->setEditable(true);
+    c3->setSpinnable(true);
+    
+    c4->setMinValue(nBasis);
+    c4->setCallback([this](int value) { 
+      nSamp = value;
+      canvas->setVisible(false);
+      ppm->rebuild(fName.c_str(), nBasis, nSamp, nSub);
+      canvas->setVisible(true);
+    });
+    c4->setEditable(true);
+    c4->setSpinnable(true);
+    
+    c5->setMinValue(1);
+    c5->setCallback([this](int value) { 
+      nSub = value;
+      canvas->setVisible(false);
+      ppm->rebuild(fName.c_str(), nBasis, nSamp, nSub);
+      canvas->setVisible(true);
+    });
+    c5->setEditable(true);
+    c5->setSpinnable(true);
+    
+    //double(nbFrames) / (currentTime - fpsTime), ppmTime / nbFrames
+    new Label(tools, "PPM time (ms)");
+    ppmTimeBox = new FloatBox<float>(tools);
+    new Label(tools, "Frame Rate (fps)");
+    fpsTimeBox = new FloatBox<float>(tools);
+    
+    performLayout(); // to calculate toolbar width
+
+    printf("PpmGui: creating canvas\n");
+    canvas = new PpmCanvas(ppm, shader, window);
+    canvas->setBackgroundColor({ 0, 0, 0, 255 });
+    canvas->setDrawBorder(false);
+    canvas->setSize({ w - tools->width(), h });
+    
+    // check CUDA devices
+    int nDevices = cudaProbe(ppm);
+    if (!nDevices) {
+      printf("no CUDA device found\n");
+      throw;
+    }
 
     printf("PpmGui: performing layout\n");
     performLayout();
-
-    //printGLErrorLog();
   }
 
   virtual ~PpmGui() {
     delete shader;
+    delete ppm;
+  }
+  
+  void rebuild(const char *f) {
+    fName = f;
+    ppm->rebuild(f, nBasis, nSamp, nSub);
   }
 
   void updateCamera() {
@@ -145,6 +205,20 @@ public:
     shader->setUniform("invTrModel", glm::inverse(glm::transpose(projection)));
     shader->setUniform("CamDir", glm::normalize(-camPos));
   }
+  
+  virtual bool resizeEvent(const nanogui::Vector2i &size) {
+    if (Screen::resizeEvent(size))
+      return true;
+    
+    performLayout();  // to recalculate toolbar width
+    canvas->setSize({ size[0] - tools->width(), size[1] });
+    xSize = size[0];
+    ySize = size[1];
+    performLayout();
+    updateCamera();
+    
+    return true;
+  }
 
   virtual void draw(NVGcontext *ctx) {
     ppmTime += ppm->update();
@@ -155,6 +229,8 @@ public:
     nbFrames++;
     if (currentTime - fpsTime >= 1.0) {
       printf("%.1f fps (dt = %.3g ms)\n", double(nbFrames) / (currentTime - fpsTime), ppmTime / nbFrames);
+      ppmTimeBox->setValue(ppmTime / nbFrames);
+      fpsTimeBox->setValue(float(nbFrames) / (currentTime - fpsTime));
       nbFrames = 0;
       ppmTime = 0.0f;
       fpsTime += 1.0;
@@ -258,7 +334,12 @@ public:
   }
 
 private:
+  PPM *ppm;
+  std::string fName;
+  int nBasis, nSamp, nSub;
+
   nanogui::GLCanvas *canvas;
+  nanogui::Widget *tools;
   
   int xSize, ySize;
   float lastX, lastY, xpos, ypos;
@@ -270,6 +351,7 @@ private:
 
   float ppmTime, fpsTime;
   int nbFrames;
+  nanogui::FloatBox<float> *ppmTimeBox, *fpsTimeBox;
 
   Shader *shader;
 };
@@ -285,21 +367,10 @@ int main(int argc, char *argv[]) {
 
   // initialize graphics
   nanogui::init();
-  PpmGui *gui = new PpmGui(argv[4], 1200, 800);
+  PpmGui *gui = new PpmGui(1200, 800);
 
-  // check CUDA devices
-  int nDevices = cudaProbe(gui->ppm);
-  if (!nDevices) {
-    printf("no CUDA device found\n");
-    delete gui;
-    return 0;
-  }
-
-  // build the PPM
-  gui->ppm->rebuild(nBasis, nSamp, nSub);
-  printf("created ppm\n");
-  //printGLErrorLog();
-
+  // main loop
+  gui->rebuild(argv[4]);
   gui->setVisible(true);
   while (!glfwWindowShouldClose(gui->glfwWindow())) {
     glfwPollEvents();

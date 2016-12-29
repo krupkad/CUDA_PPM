@@ -22,10 +22,10 @@ class Bezier;
 
 class PPM {
   public:
-    PPM(const char *fName, bool glVis = true);
+    PPM(bool glVis = true);
     ~PPM();
 
-    void rebuild(int nBasis, int nGrid, int nSub);
+    void rebuild(const char *fName, int nBasis, int nGrid, int nSub);
 
     float update();
     void draw(Shader *vShader, Shader *tShader);
@@ -45,6 +45,7 @@ class PPM {
   private:
     // PPM properties
     int nBasis, nGrid, nBasis2, nGrid2;
+    bool isBuilt;
 
     // host data
     std::vector<float> vList;
