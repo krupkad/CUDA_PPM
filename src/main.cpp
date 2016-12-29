@@ -167,6 +167,7 @@ public:
 
     if (key == GLFW_KEY_Q && action == GLFW_PRESS) {
       setVisible(false);
+      glfwSetWindowShouldClose(glfwWindow(), GL_TRUE);
       return true;
     }
 
@@ -242,12 +243,12 @@ public:
       return true;
     }
     
-    if (key == GLFW_KEY_KP_SUBTRACT && action == GLFW_PRESS) {
+    if (key == GLFW_KEY_LEFT_BRACKET && action == GLFW_PRESS) {
       zoom *= 1.1;
       updateCamera();
       return true;
     }
-    if (key == GLFW_KEY_KP_ADD && action == GLFW_PRESS) {
+    if (key == GLFW_KEY_RIGHT_BRACKET && action == GLFW_PRESS) {
       zoom /= 1.1;
       updateCamera();
       return true;
@@ -300,9 +301,12 @@ int main(int argc, char *argv[]) {
   //printGLErrorLog();
 
   gui->setVisible(true);
-  while (!glfwWindowShouldClose(gui->glfwWindow()))
+  while (!glfwWindowShouldClose(gui->glfwWindow())) {
+    glfwPollEvents();
     gui->drawAll();
+  }
 
+  nanogui::shutdown();
   delete gui;
 
   return 0;
