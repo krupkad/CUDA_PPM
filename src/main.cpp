@@ -16,13 +16,13 @@
 #include "shader.hpp"
 #include "util/error.hpp"
 
-DCEL *dcel;
 
 class PpmCanvas : public nanogui::GLCanvas {
 public:
-  PpmCanvas(Shader *shader, nanogui::Widget *parent) :
+  PpmCanvas(DCEL *dcel, Shader *shader, nanogui::Widget *parent) :
     nanogui::GLCanvas(parent),
-    shader(shader)
+    shader(shader),
+    dcel(dcel)
   {}
 
   virtual void drawGL() override {
@@ -38,9 +38,10 @@ public:
 
 private:
   Shader *shader;
+  DCEL *dcel;
 };
 
-int cudaProbe() {
+int cudaProbe(DCEL *dcel) {
 	int nDevices;
   cudaGetDeviceCount(&nDevices);
   for (int i = 0; i < nDevices; i++) {
@@ -64,24 +65,29 @@ int cudaProbe() {
 
 class PpmGui : public nanogui::Screen {
 public:
-  PpmGui(int w, int h) :
+  DCEL *dcel;
+
+  PpmGui(const char *src, int w, int h) :
     nanogui::Screen(nanogui::Vector2i(w, h), (const char *)"PPM Demo"),
     xSize(w), ySize(h),
     leftMousePressed(false), rightMousePressed(false),
-    fovy(M_PI / 4), zNear(0.01), zFar(100.0),
+    fovy(M_PI / 4), zNear(0.1), zFar(100.0),
     theta(1.22), phi(-0.7), zoom(5.0),
     ppmTime(0.0), fpsTime(0.0), nbFrames(0)
   {
     using namespace nanogui;
 
     printf("PpmGui: creating window\n");
-    Window *window = new Window(this, "PPM Vis");
-    window->setPosition(Vector2i(15, 15));
-    window->setLayout(new GroupLayout());
+    Widget *window = new Window(this);
+    window->setPosition(Vector2i(0,0));
+    window->setLayout(new GroupLayout()); 
 
     printf("PpmGui: initialize glew\n");
     glewExperimental = GL_TRUE;
     glewInit();
+
+    printf("PpmGui: creating dcel\n");
+    dcel = new DCEL(src, true);
 
     printf("PpmGui: compiling shader\n");
     shader = new Shader();
@@ -93,13 +99,26 @@ public:
     updateCamera();
 
     printf("PpmGui: creating canvas\n");
-    canvas = new PpmCanvas(shader, window);
+    canvas = new PpmCanvas(dcel, shader, window);
     canvas->setBackgroundColor({ 0, 0, 0, 255 });
-    canvas->setSize({ w - 100, h - 100 });
+    canvas->setDrawBorder(false);
+    canvas->setSize({ w - 25, h  - 75 });
 
     printf("PpmGui: creating UI\n");
     Widget *tools = new Widget(window);
     tools->setLayout(new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 5));
+
+    CheckBox *c0 = new CheckBox(tools, "Show Wireframe");
+    c0->setChecked(dcel->visSkel);
+    c0->setCallback([this](bool value) { dcel->visSkel = value; });
+
+    CheckBox *c1 = new CheckBox(tools, "Show Normals");
+    c1->setChecked(dcel->visDbgNormals);
+    c1->setCallback([this](bool value) { dcel->visDbgNormals = value; });
+
+    CheckBox *c2 = new CheckBox(tools, "Show Surface");
+    c2->setChecked(dcel->visFill);
+    c2->setCallback([this](bool value) { dcel->visFill = value; });
 
     printf("PpmGui: performing layout\n");
     performLayout();
@@ -265,44 +284,25 @@ int main(int argc, char *argv[]) {
 
   // initialize graphics
   nanogui::init();
-  PpmGui *gui = new PpmGui(1200, 800);
-  dcel = new DCEL(argv[4], gui != nullptr);
+  PpmGui *gui = new PpmGui(argv[4], 1200, 800);
 
   // check CUDA devices
-  int nDevices = cudaProbe();
+  int nDevices = cudaProbe(gui->dcel);
   if (!nDevices) {
     printf("no CUDA device found\n");
-    delete dcel;
     delete gui;
     return 0;
   }
 
   // build the PPM
-  dcel->rebuild(nBasis, nSamp, nSub);
+  gui->dcel->rebuild(nBasis, nSamp, nSub);
   printf("created dcel\n");
   //printGLErrorLog();
 
-  if (gui) {
+  gui->setVisible(true);
+  while (!glfwWindowShouldClose(gui->glfwWindow()))
     gui->drawAll();
-    gui->setVisible(true);
-    nanogui::mainloop();
-  }
-  else {
-    printf("attempting headless mode...");
 
-    double dt = 0;
-    int nCnt = 0;
-    while (1) {
-      dt += dcel->update();
-      if (dt >= 1.0) {
-        printf("dt = %.3g ms\n", dt / nCnt);
-        dt = 0;
-        nCnt = 0;
-      }
-    }
-  }
-
-  delete dcel;
   delete gui;
 
   return 0;
