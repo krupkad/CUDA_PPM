@@ -1,4 +1,4 @@
-#include "dcel.hpp"
+#include "ppm.hpp"
 #include "bezier.hpp"
 
 // output weights and bezier basis coefficients for tessellated subvertices of a patch
@@ -323,7 +323,7 @@ __global__ void kTessEdges(int nFace, int nSub, const int2 *uvIdxMap, int *idxOu
 }
 
 // generate sampling pattern textures
-void DCEL::genSampTex() {
+void PPM::genSampTex() {
   printf("populating patch maps (%d-%d = %d)\n", degMin, degMax, nDeg);
   float4 *sampTexData = new float4[nGrid * nGrid * nDeg];
   for (int d = 0; d < nDeg; d++) {
@@ -388,7 +388,7 @@ void DCEL::genSampTex() {
   //checkCUDAError("cudaCreateTextureObject", __LINE__);
 }
 
-void DCEL::genCoeff() {
+void PPM::genCoeff() {
   dim3 blkDim;
   dim3 blkCnt;
 
@@ -417,7 +417,7 @@ void DCEL::genCoeff() {
   bezier->getCoeff(nVtx, dev_samp, dev_coeff);
 }
 
-void DCEL::devCoeffInit() {
+void PPM::devCoeffInit() {
    // allocate and generate coefficients
   devAlloc(&dev_samp, 8 * nGrid2 * nVtx * sizeof(float));
   devAlloc(&dev_coeff, 8 * nBasis2 * nVtx * sizeof(float));
@@ -438,7 +438,7 @@ void DCEL::devCoeffInit() {
   delete dv;
 }
 
-void DCEL::devMeshInit() {
+void PPM::devMeshInit() {
   printf("uploading mesh data\n");
   devAlloc(&dev_vList, 8*nVtx*sizeof(float));
   cudaMemcpy(dev_vList, &vList[0],  8*nVtx*sizeof(float), cudaMemcpyHostToDevice);
@@ -465,7 +465,7 @@ void DCEL::devMeshInit() {
   checkCUDAError("kGetNormals", __LINE__);
 }
 
-void DCEL::devPatchInit() {
+void PPM::devPatchInit() {
   // initialize the bezier patch calculator
   bezier = new Bezier<float>(nBasis, nGrid);
 
@@ -504,7 +504,7 @@ void DCEL::devPatchInit() {
     genSampTex();
 }
 
-void DCEL::devTessInit() {
+void PPM::devTessInit() {
   printf("creating edge tesselation\n");
   if (useVisualize) {
     size_t nBytes;
@@ -529,15 +529,15 @@ void DCEL::devTessInit() {
 
 }
 
-// allocate and initialize DCEL data
-void DCEL::devInit() {
+// allocate and initialize PPM data
+void PPM::devInit() {
   devMeshInit();
   devPatchInit();
   devTessInit();
   devCoeffInit();
 }
 
-void DCEL::updateCoeff() {
+void PPM::updateCoeff() {
   dim3 blkDim(16,64), blkCnt;
   blkCnt.x = (nBasis2 + blkDim.x - 1) / blkDim.x;
   blkCnt.y = (nVtx + blkDim.y - 1) / blkDim.y;
@@ -545,7 +545,7 @@ void DCEL::updateCoeff() {
   checkCUDAError("kUpdateCoeff", __LINE__);
 }
 
-float DCEL::update() {
+float PPM::update() {
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
@@ -613,7 +613,7 @@ float DCEL::update() {
 }
 
 // free dcel data
-void DCEL::devFree() {
+void PPM::devFree() {
   for (void *p : allocList)
     cudaFree(p);
 

@@ -1,4 +1,4 @@
-#include "dcel.hpp"
+#include "ppm.hpp"
 #include "shader.hpp"
 #include "util/error.hpp"
 
@@ -15,7 +15,7 @@
 #include <algorithm>
 
 
-DCEL::DCEL(const char *fName, bool glVis) :
+PPM::PPM(const char *fName, bool glVis) :
   useTessSM(false),
   canUseTexObjs(true),
   useSampTex(true),
@@ -27,12 +27,12 @@ DCEL::DCEL(const char *fName, bool glVis) :
   inFile(fName)
 {}
 
-DCEL::~DCEL() {
+PPM::~PPM() {
   devFree();
   visFree();
 }
 
-void DCEL::rebuild(int nBasis, int nGrid, int nSub) {
+void PPM::rebuild(int nBasis, int nGrid, int nSub) {
   objRead(inFile.c_str());
   printf("read done\n");
 
@@ -55,7 +55,7 @@ void DCEL::rebuild(int nBasis, int nGrid, int nSub) {
 }
 
 // sort half edges a) by source, b) in patch boundary order
-void DCEL::getHeLoops() {
+void PPM::getHeLoops() {
   for(auto &itr : loopMap) {
     std::vector<int> &loop = itr.second;
 
@@ -109,7 +109,7 @@ void DCEL::getHeLoops() {
   nDeg = degMax - degMin + 1;
 }
 
-bool DCEL::objReadVtx(std::istream &fStream) {
+bool PPM::objReadVtx(std::istream &fStream) {
   float p;
   for (int i = 0; i < 3; i++) {
     fStream >> p;
@@ -121,7 +121,7 @@ bool DCEL::objReadVtx(std::istream &fStream) {
   return true;
 }
 
-bool DCEL::objReadFace(std::istream &fStream) {
+bool PPM::objReadFace(std::istream &fStream) {
   std::string vDesc;
   std::vector<int> vIdxList;
   while (!fStream.eof()) {
@@ -169,7 +169,7 @@ bool DCEL::objReadFace(std::istream &fStream) {
   return true;
 }
 
-void DCEL::objRead(const char *fName) {
+void PPM::objRead(const char *fName) {
   std::ifstream fStream(fName);
 
   // parse lines from the OBJ
@@ -197,7 +197,7 @@ void DCEL::objRead(const char *fName) {
   unsigned int N = vList.size()/8;
   for (const int4 &v : heFaces) {
     if (v.x < 0 || v.x >= N || v.y < 0 || v.y >= N)
-      throw std::logic_error("DCEL: invalid vertex");
+      throw std::logic_error("PPM: invalid vertex");
   }
 
   // get the vertex count
@@ -206,7 +206,7 @@ void DCEL::objRead(const char *fName) {
   nFace = nHe / 3;
 }
 
-void DCEL::visInit() {
+void PPM::visInit() {
   glGenBuffers(1, &vboVtx); // vList.size() vertices (3 floats)
   glGenBuffers(1, &vboIdx); // fList.size() indices (1 int)
   glGenBuffers(1, &vboTessVtx); // vList.size() vertices (3 floats)
@@ -260,7 +260,7 @@ void DCEL::visInit() {
   glBindVertexArray(0);
 }
 
-void DCEL::draw(Shader *vShader, Shader *tShader) {
+void PPM::draw(Shader *vShader, Shader *tShader) {
 	if (visSkel) {
 	  glPointSize(1.0f);
 	  glLineWidth(2.0f);
@@ -308,7 +308,7 @@ void DCEL::draw(Shader *vShader, Shader *tShader) {
 }
 
 
-void DCEL::visFree() {
+void PPM::visFree() {
   if (!useVisualize)
     return;
 

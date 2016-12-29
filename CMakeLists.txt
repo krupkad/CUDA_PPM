@@ -99,7 +99,7 @@ set(CUDA_SEPARABLE_COMPILATION ON)
 add_subdirectory(src)
 
 cuda_add_executable(${CMAKE_PROJECT_NAME}
-    "src/dcel.hpp"
+    "src/ppm.hpp"
     "src/shader.hpp"
     "src/shader.cpp"
     "src/main.cpp"

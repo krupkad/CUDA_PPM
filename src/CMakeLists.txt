@@ -1,7 +1,7 @@
 set(SOURCE_FILES
-    "dcel_cuda.cu"
-    "dcel.cpp"
-    "dcel.hpp"
+    "ppm_cuda.cu"
+    "ppm.cpp"
+    "ppm.hpp"
     "util/lapack.hpp"
     "util/math.hpp"
     "bezier.hpp"

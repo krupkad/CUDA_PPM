@@ -1,5 +1,5 @@
-#ifndef DCEL_HPP
-#define DCEL_HPP
+#ifndef PPM_HPP
+#define PPM_HPP
 
 #define _USE_MATH_DEFINES
 #include <cmath>
@@ -20,10 +20,10 @@
 template <typename T>
 class Bezier;
 
-class DCEL {
+class PPM {
   public:
-    DCEL(const char *fName, bool glVis = true);
-    ~DCEL();
+    PPM(const char *fName, bool glVis = true);
+    ~PPM();
 
     void rebuild(int nBasis, int nGrid, int nSub);
 
@@ -112,4 +112,4 @@ class DCEL {
 };
 
 
-#endif /* DCEL_HPP */
+#endif /* PPM_HPP */

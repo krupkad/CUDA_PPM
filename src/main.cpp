@@ -12,17 +12,17 @@
 
 #include <cuda_runtime.h>
 
-#include "dcel.hpp"
+#include "ppm.hpp"
 #include "shader.hpp"
 #include "util/error.hpp"
 
 
 class PpmCanvas : public nanogui::GLCanvas {
 public:
-  PpmCanvas(DCEL *dcel, Shader *shader, nanogui::Widget *parent) :
+  PpmCanvas(PPM *ppm, Shader *shader, nanogui::Widget *parent) :
     nanogui::GLCanvas(parent),
     shader(shader),
-    dcel(dcel)
+    ppm(ppm)
   {}
 
   virtual void drawGL() override {
@@ -31,17 +31,17 @@ public:
     glGetIntegerv(GL_BLEND_DST_RGB, &oldBlendDst);
     glBlendFunc(GL_ONE, GL_ZERO);
     glEnable(GL_DEPTH_TEST);
-    dcel->draw(shader, nullptr);
+    ppm->draw(shader, nullptr);
     glDisable(GL_DEPTH_TEST);
     glBlendFunc(oldBlendSrc, oldBlendDst);
   }
 
 private:
   Shader *shader;
-  DCEL *dcel;
+  PPM *ppm;
 };
 
-int cudaProbe(DCEL *dcel) {
+int cudaProbe(PPM *ppm) {
 	int nDevices;
   cudaGetDeviceCount(&nDevices);
   for (int i = 0; i < nDevices; i++) {
@@ -54,9 +54,9 @@ int cudaProbe(DCEL *dcel) {
     printf("  Compute capability: %d.%d", prop.major, prop.minor);
     if (prop.major < 3) {
       printf(" (< 3.0, disabling texSamp)");
-      dcel->canUseTexObjs = false;
+      ppm->canUseTexObjs = false;
     } else {
-      dcel->canUseTexObjs = true;
+      ppm->canUseTexObjs = true;
     }
     printf("\n");
   }
@@ -65,7 +65,7 @@ int cudaProbe(DCEL *dcel) {
 
 class PpmGui : public nanogui::Screen {
 public:
-  DCEL *dcel;
+  PPM *ppm;
 
   PpmGui(const char *src, int w, int h) :
     nanogui::Screen(nanogui::Vector2i(w, h), (const char *)"PPM Demo"),
@@ -86,20 +86,20 @@ public:
     glewExperimental = GL_TRUE;
     glewInit();
 
-    printf("PpmGui: creating dcel\n");
-    dcel = new DCEL(src, true);
+    printf("PpmGui: creating ppm\n");
+    ppm = new PPM(src, true);
 
     printf("PpmGui: compiling shader\n");
     shader = new Shader();
-    shader->setShader("shaders/dcel.frag.glsl", GL_FRAGMENT_SHADER);
-    shader->setShader("shaders/dcel.vert.glsl", GL_VERTEX_SHADER);
+    shader->setShader("shaders/ppm.frag.glsl", GL_FRAGMENT_SHADER);
+    shader->setShader("shaders/ppm.vert.glsl", GL_VERTEX_SHADER);
     shader->recompile();
     glClearDepth(1.0);
     glDepthFunc(GL_LEQUAL);
     updateCamera();
 
     printf("PpmGui: creating canvas\n");
-    canvas = new PpmCanvas(dcel, shader, window);
+    canvas = new PpmCanvas(ppm, shader, window);
     canvas->setBackgroundColor({ 0, 0, 0, 255 });
     canvas->setDrawBorder(false);
     canvas->setSize({ w - 25, h  - 75 });
@@ -109,16 +109,16 @@ public:
     tools->setLayout(new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 5));
 
     CheckBox *c0 = new CheckBox(tools, "Show Wireframe");
-    c0->setChecked(dcel->visSkel);
-    c0->setCallback([this](bool value) { dcel->visSkel = value; });
+    c0->setChecked(ppm->visSkel);
+    c0->setCallback([this](bool value) { ppm->visSkel = value; });
 
     CheckBox *c1 = new CheckBox(tools, "Show Normals");
-    c1->setChecked(dcel->visDbgNormals);
-    c1->setCallback([this](bool value) { dcel->visDbgNormals = value; });
+    c1->setChecked(ppm->visDbgNormals);
+    c1->setCallback([this](bool value) { ppm->visDbgNormals = value; });
 
     CheckBox *c2 = new CheckBox(tools, "Show Surface");
-    c2->setChecked(dcel->visFill);
-    c2->setCallback([this](bool value) { dcel->visFill = value; });
+    c2->setChecked(ppm->visFill);
+    c2->setCallback([this](bool value) { ppm->visFill = value; });
 
     printf("PpmGui: performing layout\n");
     performLayout();
@@ -147,7 +147,7 @@ public:
   }
 
   virtual void draw(NVGcontext *ctx) {
-    ppmTime += dcel->update();
+    ppmTime += ppm->update();
     Screen::draw(ctx);
 
     // perform timing
@@ -176,15 +176,15 @@ public:
     // S = show input skeleton
     // N = color using normals
     if (key == GLFW_KEY_F && action == GLFW_PRESS) {
-      dcel->visFill = !dcel->visFill;
+      ppm->visFill = !ppm->visFill;
       return true;
     }
     if (key == GLFW_KEY_S && action == GLFW_PRESS) {
-      dcel->visSkel = !dcel->visSkel;
+      ppm->visSkel = !ppm->visSkel;
       return true;
     }
     if (key == GLFW_KEY_N && action == GLFW_PRESS) {
-      dcel->visDbgNormals = !dcel->visDbgNormals;
+      ppm->visDbgNormals = !ppm->visDbgNormals;
       return true;
     }
 
@@ -192,8 +192,8 @@ public:
     // 1 = SM use for vertex computation
     // 2 = keep evaluated bezier values in textures
     if (key == GLFW_KEY_1 && action == GLFW_PRESS) {
-      dcel->useTessSM = !dcel->useTessSM;
-      if (dcel->useTessSM) {
+      ppm->useTessSM = !ppm->useTessSM;
+      if (ppm->useTessSM) {
         printf("using full-SM tessVtx\n");
       }
       else {
@@ -203,8 +203,8 @@ public:
     }
 
     if (key == GLFW_KEY_2 && action == GLFW_PRESS) {
-      dcel->useSampTex = !dcel->useSampTex;
-      if (dcel->useSampTex)
+      ppm->useSampTex = !ppm->useSampTex;
+      if (ppm->useSampTex)
         printf("using texture sampling patterns\n");
       else
         printf("using computed sampling patterns\n");
@@ -213,8 +213,8 @@ public:
 
     // D = toggle deformation
     if (key == GLFW_KEY_D && action == GLFW_PRESS) {
-      dcel->useSvdUpdate = !dcel->useSvdUpdate;
-      if (dcel->useSvdUpdate)
+      ppm->useSvdUpdate = !ppm->useSvdUpdate;
+      if (ppm->useSvdUpdate)
         printf("using deformation\n");
       else
         printf("using static\n");
@@ -288,7 +288,7 @@ int main(int argc, char *argv[]) {
   PpmGui *gui = new PpmGui(argv[4], 1200, 800);
 
   // check CUDA devices
-  int nDevices = cudaProbe(gui->dcel);
+  int nDevices = cudaProbe(gui->ppm);
   if (!nDevices) {
     printf("no CUDA device found\n");
     delete gui;
@@ -296,8 +296,8 @@ int main(int argc, char *argv[]) {
   }
 
   // build the PPM
-  gui->dcel->rebuild(nBasis, nSamp, nSub);
-  printf("created dcel\n");
+  gui->ppm->rebuild(nBasis, nSamp, nSub);
+  printf("created ppm\n");
   //printGLErrorLog();
 
   gui->setVisible(true);
