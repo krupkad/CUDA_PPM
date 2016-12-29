@@ -26,12 +26,14 @@ public:
   {}
 
   virtual void drawGL() override {
+    int oldBlendSrc, oldBlendDst;
+    glGetIntegerv(GL_BLEND_SRC_RGB, &oldBlendSrc);
+    glGetIntegerv(GL_BLEND_DST_RGB, &oldBlendDst);
+    glBlendFunc(GL_ONE, GL_ZERO);
     glEnable(GL_DEPTH_TEST);
-    glClearDepth(1.0);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glDepthFunc(GL_LEQUAL);
     dcel->draw(shader, nullptr);
     glDisable(GL_DEPTH_TEST);
+    glBlendFunc(oldBlendSrc, oldBlendDst);
   }
 
 private:
@@ -66,7 +68,7 @@ public:
     nanogui::Screen(nanogui::Vector2i(w, h), (const char *)"PPM Demo"),
     xSize(w), ySize(h),
     leftMousePressed(false), rightMousePressed(false),
-    fovy(M_PI / 4), zNear(0.1), zFar(100.0),
+    fovy(M_PI / 4), zNear(0.01), zFar(100.0),
     theta(1.22), phi(-0.7), zoom(5.0),
     ppmTime(0.0), fpsTime(0.0), nbFrames(0)
   {
@@ -86,6 +88,8 @@ public:
     shader->setShader("shaders/dcel.frag.glsl", GL_FRAGMENT_SHADER);
     shader->setShader("shaders/dcel.vert.glsl", GL_VERTEX_SHADER);
     shader->recompile();
+    glClearDepth(1.0);
+    glDepthFunc(GL_LEQUAL);
     updateCamera();
 
     printf("PpmGui: creating canvas\n");
@@ -100,7 +104,7 @@ public:
     printf("PpmGui: performing layout\n");
     performLayout();
 
-    printGLErrorLog();
+    //printGLErrorLog();
   }
 
   virtual ~PpmGui() {
@@ -218,6 +222,17 @@ public:
       updateCamera();
       return true;
     }
+    
+    if (key == GLFW_KEY_KP_SUBTRACT && action == GLFW_PRESS) {
+      zoom *= 1.1;
+      updateCamera();
+      return true;
+    }
+    if (key == GLFW_KEY_KP_ADD && action == GLFW_PRESS) {
+      zoom /= 1.1;
+      updateCamera();
+      return true;
+    }
 
     return false;
   }
@@ -227,9 +242,9 @@ private:
   
   int xSize, ySize;
   float lastX, lastY, xpos, ypos;
-  bool leftMousePressed = false, rightMousePressed = false;
-  float fovy = (float)(M_PI / 4), zNear = 0.10f, zFar = 100.0f;
-  float theta = 1.22f, phi = -0.70f, zoom = 5.0f;
+  bool leftMousePressed, rightMousePressed;
+  float fovy, zNear, zFar;
+  float theta, phi, zoom;
   glm::vec3 camPos;
   glm::mat4 projection;
 
@@ -248,29 +263,31 @@ int main(int argc, char *argv[]) {
   int nSamp = atoi(argv[2]);
   int nSub = atoi(argv[3]);
 
+  // initialize graphics
   nanogui::init();
   PpmGui *gui = new PpmGui(1200, 800);
+  dcel = new DCEL(argv[4], gui != nullptr);
 
   // check CUDA devices
-  // create the PPM
-  dcel = new DCEL(argv[4], true);
   int nDevices = cudaProbe();
   if (!nDevices) {
     printf("no CUDA device found\n");
+    delete dcel;
+    delete gui;
     return 0;
   }
+
+  // build the PPM
   dcel->rebuild(nBasis, nSamp, nSub);
   printf("created dcel\n");
-  printGLErrorLog();
+  //printGLErrorLog();
 
-  try {
+  if (gui) {
     gui->drawAll();
     gui->setVisible(true);
     nanogui::mainloop();
   }
-  catch (const std::runtime_error &e) {
-    printf("nanogui error: %s\n", e.what());
-    /*
+  else {
     printf("attempting headless mode...");
 
     double dt = 0;
@@ -283,10 +300,10 @@ int main(int argc, char *argv[]) {
         nCnt = 0;
       }
     }
-    */
   }
 
   delete dcel;
+  delete gui;
 
   return 0;
 }

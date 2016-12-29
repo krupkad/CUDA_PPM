@@ -222,9 +222,9 @@ void DCEL::visInit() {
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)0);
   glEnableVertexAttribArray(1);
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)3);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)(3* sizeof(float)));
   glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)6);
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)(6* sizeof(float)));
 
   printf("loading fidx vbo\n");
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboIdx);
@@ -242,19 +242,20 @@ void DCEL::visInit() {
   cudaGraphicsGLRegisterBuffer(&dev_vboTessVtx, vboTessVtx, cudaGraphicsMapFlagsNone);
   checkCUDAError("cudaGraphicsGLRegisterBuffer", __LINE__);
   glEnableVertexAttribArray(0);
+  glBindBuffer(GL_ARRAY_BUFFER, vboTessVtx);
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)0);
   glEnableVertexAttribArray(1);
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)3);
+  glBindBuffer(GL_ARRAY_BUFFER, vboTessVtx);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)(3 * sizeof(float)));
   glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)6);
+  glBindBuffer(GL_ARRAY_BUFFER, vboTessVtx);
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)(6* sizeof(float)));
 
   printf("loading fidx tess vbo\n");
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboTessIdx);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, 3 * nFace * nSubFace * sizeof(int), 0, GL_STATIC_DRAW);
   cudaGraphicsGLRegisterBuffer(&dev_vboTessIdx, vboTessIdx, cudaGraphicsMapFlagsNone);
   checkCUDAError("cudaGraphicsGLRegisterBuffer", __LINE__);
-  //glEnableVertexAttribArray(3);
-  //glVertexAttribIPointer(3, GL_INT, 3, 0, (const void*)0);
 
   glBindVertexArray(0);
 }

@@ -14,7 +14,7 @@ uniform bool dbgNormals;
 void main() {
 	if (nShade) {
     if (dbgNormals)
-      color = 5.0*vNormal;
+      color = abs(vNormal);
     else {
       vec3 lDir = -normalize(vec3(1,-4,4));
       vec3 hDir = normalize(CamDir + lDir);
