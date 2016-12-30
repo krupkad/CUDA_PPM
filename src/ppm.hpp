@@ -38,7 +38,6 @@ class PPM {
     // optimization options
     bool useTessSM;
     bool useSampTex;
-    bool useSvdUpdate;
 
     // functionality flags
     bool canUseTexObjs;

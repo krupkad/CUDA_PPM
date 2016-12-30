@@ -41,28 +41,6 @@ private:
   PPM *ppm;
 };
 
-int cudaProbe(PPM *ppm) {
-  int nDevices;
-  cudaGetDeviceCount(&nDevices);
-  for (int i = 0; i < nDevices; i++) {
-    cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, i);
-    checkCUDAError("cudaGetDeviceProperties", __LINE__);
-    
-    printf("Device Number: %d\n", i);
-    printf("  Device name: %s\n", prop.name);
-    printf("  Compute capability: %d.%d", prop.major, prop.minor);
-    if (prop.major < 3) {
-      printf(" (< 3.0, disabling texSamp)");
-      ppm->canUseTexObjs = false;
-    } else {
-      ppm->canUseTexObjs = true;
-    }
-    printf("\n");
-  }
-	return nDevices;
-}
-
 class PpmGui : public nanogui::Screen {
 public:
   PpmGui(int w, int h) :
@@ -80,15 +58,21 @@ public:
     printf("PpmGui: creating window\n");
     Widget *window = new Window(this, "");
     window->setPosition(Vector2i(0,0));
-    Layout *wLayout = new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 5);
-    window->setLayout(wLayout); 
+    window->setLayout(new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 5)); 
 
     printf("PpmGui: initialize glew\n");
     glewExperimental = GL_TRUE;
     glewInit();
-
+  
     printf("PpmGui: creating ppm\n");
     ppm = new PPM(true);
+ 
+    // check CUDA devices
+    int nDevices = cudaProbe();
+    if (!nDevices) {
+      printf("no CUDA device found\n");
+      throw;
+    }
 
     printf("PpmGui: compiling shader\n");
     shader = new Shader();
@@ -103,17 +87,29 @@ public:
     tools = new Widget(window);
     tools->setLayout(new GroupLayout(8));
 
-    CheckBox *c0 = new CheckBox(tools, "Show Wireframe");
-    c0->setChecked(ppm->visSkel);
-    c0->setCallback([this](bool value) { ppm->visSkel = value; });
+    CheckBox *chkWireframe = new CheckBox(tools, "Show Wireframe");
+    chkWireframe->setChecked(ppm->visSkel);
+    chkWireframe->setCallback([this](bool value) { ppm->visSkel = value; });
 
-    CheckBox *c1 = new CheckBox(tools, "Show Normals");
-    c1->setChecked(ppm->visDbgNormals);
-    c1->setCallback([this](bool value) { ppm->visDbgNormals = value; });
+    CheckBox *chkNormals = new CheckBox(tools, "Show Normals");
+    chkNormals->setChecked(ppm->visDbgNormals);
+    chkNormals->setCallback([this](bool value) { ppm->visDbgNormals = value; });
 
-    CheckBox *c2 = new CheckBox(tools, "Show Surface");
-    c2->setChecked(ppm->visFill);
-    c2->setCallback([this](bool value) { ppm->visFill = value; });
+    CheckBox *chkFill = new CheckBox(tools, "Show Surface");
+    chkFill->setChecked(ppm->visFill);
+    chkFill->setCallback([this](bool value) { ppm->visFill = value; });
+    
+    CheckBox *chkSM = new CheckBox(tools, "Use SM");
+    chkSM->setChecked(ppm->useTessSM);
+    chkSM->setCallback([this](bool value) { ppm->useTessSM = value; });
+
+    CheckBox *chkSampTex = new CheckBox(tools, "Use Tex Samp");
+    if (ppm->canUseTexObjs) {
+      chkSampTex->setChecked(ppm->useSampTex);
+      chkSampTex->setCallback([this](bool value) { ppm->useSampTex = value; });
+    } else {
+      chkSampTex->setCallback([this,chkSampTex](bool value) { chkSampTex->setChecked(false); });
+    }
     
     new Label(tools, "nBasis");
     IntBox<int> *c3 = new IntBox<int>(tools, nBasis);
@@ -155,7 +151,6 @@ public:
     c5->setEditable(true);
     c5->setSpinnable(true);
     
-    //double(nbFrames) / (currentTime - fpsTime), ppmTime / nbFrames
     new Label(tools, "PPM time (ms)");
     ppmTimeBox = new FloatBox<float>(tools);
     new Label(tools, "Frame Rate (fps)");
@@ -163,7 +158,7 @@ public:
     
     new Label(tools, "Base faces");
     ppmBaseFaceBox = new IntBox<int>(tools);
-    new Label(tools, "Tess rate (faces/ms)");
+    new Label(tools, "Tess rate (faces/s)");
     ppmTessRateBox = new FloatBox<float>(tools);
     
     performLayout(); // to calculate toolbar width
@@ -174,13 +169,7 @@ public:
     canvas->setDrawBorder(false);
     canvas->setSize({ w - tools->width(), h });
     
-    // check CUDA devices
-    int nDevices = cudaProbe(ppm);
-    if (!nDevices) {
-      printf("no CUDA device found\n");
-      throw;
-    }
-
+   
     printf("PpmGui: performing layout\n");
     performLayout();
   }
@@ -248,59 +237,9 @@ public:
     if (Screen::keyboardEvent(key, scancode, action, modifiers))
       return true;
 
-    if (key == GLFW_KEY_Q && action == GLFW_PRESS) {
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
       setVisible(false);
       glfwSetWindowShouldClose(glfwWindow(), GL_TRUE);
-      return true;
-    }
-
-    //// visualization
-    // F = show PPM surface
-    // S = show input skeleton
-    // N = color using normals
-    if (key == GLFW_KEY_F && action == GLFW_PRESS) {
-      ppm->visFill = !ppm->visFill;
-      return true;
-    }
-    if (key == GLFW_KEY_S && action == GLFW_PRESS) {
-      ppm->visSkel = !ppm->visSkel;
-      return true;
-    }
-    if (key == GLFW_KEY_N && action == GLFW_PRESS) {
-      ppm->visDbgNormals = !ppm->visDbgNormals;
-      return true;
-    }
-
-    //// functional controls
-    // 1 = SM use for vertex computation
-    // 2 = keep evaluated bezier values in textures
-    if (key == GLFW_KEY_1 && action == GLFW_PRESS) {
-      ppm->useTessSM = !ppm->useTessSM;
-      if (ppm->useTessSM) {
-        printf("using full-SM tessVtx\n");
-      }
-      else {
-        printf("using non-SM tessVtx\n");
-      }
-      return true;
-    }
-
-    if (key == GLFW_KEY_2 && action == GLFW_PRESS) {
-      ppm->useSampTex = !ppm->useSampTex;
-      if (ppm->useSampTex)
-        printf("using texture sampling patterns\n");
-      else
-        printf("using computed sampling patterns\n");
-      return true;
-    }
-
-    // D = toggle deformation
-    if (key == GLFW_KEY_D && action == GLFW_PRESS) {
-      ppm->useSvdUpdate = !ppm->useSvdUpdate;
-      if (ppm->useSvdUpdate)
-        printf("using deformation\n");
-      else
-        printf("using static\n");
       return true;
     }
 
@@ -338,6 +277,28 @@ public:
     }
 
     return false;
+  }
+
+  int cudaProbe() {
+    int nDevices;
+    cudaGetDeviceCount(&nDevices);
+    for (int i = 0; i < nDevices; i++) {
+      cudaDeviceProp prop;
+      cudaGetDeviceProperties(&prop, i);
+      checkCUDAError("cudaGetDeviceProperties", __LINE__);
+      
+      printf("Device Number: %d\n", i);
+      printf("  Device name: %s\n", prop.name);
+      printf("  Compute capability: %d.%d", prop.major, prop.minor);
+      if (prop.major < 3) {
+        printf(" (< 3.0, disabling texSamp)");
+        ppm->canUseTexObjs = false;
+      } else {
+        ppm->canUseTexObjs = true;
+      }
+      printf("\n");
+    }
+    return nDevices;
   }
 
 private:
@@ -386,8 +347,8 @@ int main(int argc, char *argv[]) {
     gui->drawAll();
   }
 
-  nanogui::shutdown();
   delete gui;
+  nanogui::shutdown();
 
   return 0;
 }

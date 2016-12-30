@@ -555,8 +555,7 @@ float PPM::update() {
   dim3 blkCnt;
 
   // generate/update bezier coefficients
-  if (useSvdUpdate)
-    updateCoeff();
+  updateCoeff();
 
   // calculate new vertex positions
   if (useVisualize) {

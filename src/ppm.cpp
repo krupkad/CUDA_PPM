@@ -19,7 +19,6 @@ PPM::PPM(bool glVis) :
   useTessSM(false),
   canUseTexObjs(true),
   useSampTex(true),
-  useSvdUpdate(true),
   useVisualize(glVis),
   visFill(true),
   visSkel(true),
