@@ -101,7 +101,7 @@ public:
 
     printf("PpmGui: creating UI\n");
     tools = new Widget(window);
-    tools->setLayout(new GroupLayout(5));
+    tools->setLayout(new GroupLayout(8));
 
     CheckBox *c0 = new CheckBox(tools, "Show Wireframe");
     c0->setChecked(ppm->visSkel);
@@ -129,7 +129,7 @@ public:
       c4->setValue(nSamp);
       c4->setMinValue(nBasis);
       canvas->setVisible(false);
-      ppm->rebuild(fName.c_str(), nBasis, nSamp, nSub);
+      rebuild(fName.c_str());
       canvas->setVisible(true);
     });
     c3->setEditable(true);
@@ -139,7 +139,7 @@ public:
     c4->setCallback([this](int value) { 
       nSamp = value;
       canvas->setVisible(false);
-      ppm->rebuild(fName.c_str(), nBasis, nSamp, nSub);
+      rebuild(fName.c_str());
       canvas->setVisible(true);
     });
     c4->setEditable(true);
@@ -149,7 +149,7 @@ public:
     c5->setCallback([this](int value) { 
       nSub = value;
       canvas->setVisible(false);
-      ppm->rebuild(fName.c_str(), nBasis, nSamp, nSub);
+      rebuild(fName.c_str());
       canvas->setVisible(true);
     });
     c5->setEditable(true);
@@ -160,6 +160,11 @@ public:
     ppmTimeBox = new FloatBox<float>(tools);
     new Label(tools, "Frame Rate (fps)");
     fpsTimeBox = new FloatBox<float>(tools);
+    
+    new Label(tools, "Base faces");
+    ppmBaseFaceBox = new IntBox<int>(tools);
+    new Label(tools, "Tess rate (faces/ms)");
+    ppmTessRateBox = new FloatBox<float>(tools);
     
     performLayout(); // to calculate toolbar width
 
@@ -188,6 +193,7 @@ public:
   void rebuild(const char *f) {
     fName = f;
     ppm->rebuild(f, nBasis, nSamp, nSub);
+    ppmBaseFaceBox->setValue(ppm->nFace);
   }
 
   void updateCamera() {
@@ -231,6 +237,7 @@ public:
       printf("%.1f fps (dt = %.3g ms)\n", double(nbFrames) / (currentTime - fpsTime), ppmTime / nbFrames);
       ppmTimeBox->setValue(ppmTime / nbFrames);
       fpsTimeBox->setValue(float(nbFrames) / (currentTime - fpsTime));
+      ppmTessRateBox->setValue(ppmTime * ppm->nFace * ppm->nSubFace / nbFrames);
       nbFrames = 0;
       ppmTime = 0.0f;
       fpsTime += 1.0;
@@ -337,6 +344,8 @@ private:
   PPM *ppm;
   std::string fName;
   int nBasis, nSamp, nSub;
+  nanogui::IntBox<int> *ppmBaseFaceBox;
+  nanogui::FloatBox<float> *ppmTessRateBox;
 
   nanogui::GLCanvas *canvas;
   nanogui::Widget *tools;

@@ -42,6 +42,11 @@ class PPM {
 
     // functionality flags
     bool canUseTexObjs;
+    
+    // exposed mesh properties
+    int nVtx, nFace, nHe;
+    int nSub, nSubFace, nSubVtx;
+    int degMin, degMax, nDeg;
   private:
     // PPM properties
     int nBasis, nGrid, nBasis2, nGrid2;
@@ -71,11 +76,6 @@ class PPM {
     // sampling texture
     cudaArray *dev_sampTexArray;
     cudaTextureObject_t sampTexObj;
-
-    // tessellation info
-    int nVtx, nFace, nHe;
-    int nSub, nSubFace, nSubVtx;
-    int degMin, degMax, nDeg;
 
     // GL visualization data
     bool useVisualize;
