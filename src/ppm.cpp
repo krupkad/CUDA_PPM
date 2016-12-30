@@ -45,7 +45,10 @@ void PPM::rebuild(const char *fName, int nBasis, int nGrid, int nSub) {
     visFree();
   }
   
-  objRead(fName);
+  if (!objRead(fName)) {
+    printf("couldn't open file %s\n", fName);
+    return;
+  }
   inFile = fName;
   printf("read done\n");
 
@@ -184,8 +187,10 @@ bool PPM::objReadFace(std::istream &fStream) {
   return true;
 }
 
-void PPM::objRead(const char *fName) {
+bool PPM::objRead(const char *fName) {
   std::ifstream fStream(fName);
+  if (!fStream.good())
+    return false;
 
   // parse lines from the OBJ
   std::string line, type;
@@ -211,14 +216,15 @@ void PPM::objRead(const char *fName) {
   // check that vertex indices are valid
   unsigned int N = vList.size()/8;
   for (const int4 &v : heFaces) {
-    if (v.x < 0 || v.x >= N || v.y < 0 || v.y >= N)
-      throw std::logic_error("PPM: invalid vertex");
+    if (v.x < 0 || v.x >= N || v.y < 0 || v.y >= N) return false;
   }
 
   // get the vertex count
   nVtx = vList.size()/8;
   nHe = heFaces.size();
   nFace = nHe / 3;
+
+  return true;
 }
 
 void PPM::visInit() {

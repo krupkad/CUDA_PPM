@@ -7,6 +7,7 @@
 
 #include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 #include <nanogui/nanogui.h>
 
@@ -124,9 +125,7 @@ public:
       nSamp = std::max(nBasis, nSamp);
       c4->setValue(nSamp);
       c4->setMinValue(nBasis);
-      canvas->setVisible(false);
-      rebuild(fName.c_str());
-      canvas->setVisible(true);
+      rebuild();
     });
     c3->setEditable(true);
     c3->setSpinnable(true);
@@ -134,9 +133,7 @@ public:
     c4->setMinValue(nBasis);
     c4->setCallback([this](int value) { 
       nSamp = value;
-      canvas->setVisible(false);
-      rebuild(fName.c_str());
-      canvas->setVisible(true);
+      rebuild();
     });
     c4->setEditable(true);
     c4->setSpinnable(true);
@@ -144,9 +141,7 @@ public:
     c5->setMinValue(1);
     c5->setCallback([this](int value) { 
       nSub = value;
-      canvas->setVisible(false);
-      rebuild(fName.c_str());
-      canvas->setVisible(true);
+      rebuild();
     });
     c5->setEditable(true);
     c5->setSpinnable(true);
@@ -161,6 +156,14 @@ public:
     new Label(tools, "Tess rate (faces/s)");
     ppmTessRateBox = new FloatBox<float>(tools);
     
+    Button *fileButton = new Button(tools, "Load OBJ");
+    fileButton->setCallback([this,fileButton] { 
+        fName = nanogui::file_dialog({{"obj","Wavefront OBJ"}}, true);
+        rebuild();
+        fileButton->setTooltip(fName);
+    });
+
+
     performLayout(); // to calculate toolbar width
 
     printf("PpmGui: creating canvas\n");
@@ -179,22 +182,26 @@ public:
     delete ppm;
   }
   
-  void rebuild(const char *f) {
-    fName = f;
-    ppm->rebuild(f, nBasis, nSamp, nSub);
+  void rebuild() {
+    if (fName.empty())
+      return;
+    canvas->setVisible(false);
+    ppm->rebuild(fName.c_str(), nBasis, nSamp, nSub);
+    canvas->setVisible(true);
     ppmBaseFaceBox->setValue(ppm->nFace);
   }
 
   void updateCamera() {
-    theta = std::min((float)M_PI - 0.001f, std::max(0.001f, theta));
+    //camPos.x = zoom * sin(phi) * sin(theta);
+    //camPos.y = zoom * cos(theta);
+    //camPos.z = -zoom * cos(phi) * sin(theta);
+    camPos = glm::vec3(0.0f, 0.0f, -zoom);
 
-    camPos.x = zoom * sin(phi) * sin(theta);
-    camPos.y = zoom * cos(theta);
-    camPos.z = -zoom * cos(phi) * sin(theta);
 
     projection = glm::perspective(fovy, float(xSize) / float(ySize), zNear, zFar);
     glm::mat4 view = glm::lookAt(camPos, glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
-    projection = projection * view;
+    glm::mat4 model = glm::eulerAngleYX(phi, theta);
+    projection = projection * view * model;
 
     shader->setUniform("model", projection);
     shader->setUniform("invTrModel", glm::inverse(glm::transpose(projection)));
@@ -223,10 +230,9 @@ public:
     double currentTime = glfwGetTime();
     nbFrames++;
     if (currentTime - fpsTime >= 1.0) {
-      printf("%.1f fps (dt = %.3g ms)\n", double(nbFrames) / (currentTime - fpsTime), ppmTime / nbFrames);
       ppmTimeBox->setValue(ppmTime / nbFrames);
       fpsTimeBox->setValue(float(nbFrames) / (currentTime - fpsTime));
-      ppmTessRateBox->setValue(ppmTime * ppm->nFace * ppm->nSubFace / nbFrames);
+      ppmTessRateBox->setValue(1000.0f * nbFrames * ppm->nFace * ppm->nSubFace / ppmTime);
       nbFrames = 0;
       ppmTime = 0.0f;
       fpsTime += 1.0;
@@ -327,20 +333,11 @@ private:
 };
 
 int main(int argc, char *argv[]) {
-  if (argc < 5) {
-    printf("usage: %s nBasis nSamp nSub objFile\n", argv[0]);
-    return 0;
-  }
-  int nBasis = atoi(argv[1]);
-  int nSamp = atoi(argv[2]);
-  int nSub = atoi(argv[3]);
-
   // initialize graphics
   nanogui::init();
   PpmGui *gui = new PpmGui(1200, 800);
 
   // main loop
-  gui->rebuild(argv[4]);
   gui->setVisible(true);
   while (!glfwWindowShouldClose(gui->glfwWindow())) {
     glfwPollEvents();

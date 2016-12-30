@@ -83,7 +83,7 @@ class PPM {
 	  unsigned int vboTessIdx, vboTessVtx;
 	  cudaGraphicsResource *dev_vboTessIdx, *dev_vboTessVtx;
 
-    void objRead(const char *fName);
+    bool objRead(const char *fName);
     bool objReadVtx(std::istream &fStream);
     bool objReadFace(std::istream &fStream);
     void getHeLoops();

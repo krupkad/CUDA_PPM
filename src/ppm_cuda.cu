@@ -546,6 +546,9 @@ void PPM::updateCoeff() {
 }
 
 float PPM::update() {
+  if (!isBuilt)
+    return 0.0f;
+
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
