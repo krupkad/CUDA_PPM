@@ -1,5 +1,6 @@
 set(SOURCE_FILES
     "ppm_cuda.cu"
+    "phys.cu"
     "ppm.cpp"
     "ppm.hpp"
     "util/lapack.hpp"

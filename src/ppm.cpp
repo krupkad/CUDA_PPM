@@ -69,6 +69,9 @@ void PPM::rebuild(const char *fName, int nBasis, int nGrid, int nSub) {
   devInit();
   printf("dev done\n");
   
+  // physics
+  physInit();
+  
   isBuilt = true;
 }
 

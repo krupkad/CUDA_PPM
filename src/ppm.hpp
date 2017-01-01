@@ -94,6 +94,7 @@ class PPM {
     void devMeshInit();
     void devCoeffInit();
     void devTessInit();
+    void physInit();
 
     void genSampTex();
     void genCoeff();
