@@ -12,8 +12,14 @@
 #include <GL/glu.h>
 #include <GL/gl.h>
 
+#include <cuda.h>
 #include <cuda_runtime.h>
 #include <cuda_gl_interop.h>
+
+#ifdef __CUDA_ARCH__
+#define GLM_FORCE_CUDA
+#endif
+#include <glm/glm.hpp>
 
 #include "shader.hpp"
 
@@ -59,6 +65,7 @@ class PPM {
     std::vector<int2> vBndList;
     std::unordered_map<int, std::vector<int>> loopMap;
 
+    // device data
     float *dev_vList;
     int2 *dev_vBndList;
     Bezier<float> *bezier;
@@ -82,6 +89,11 @@ class PPM {
 	  unsigned int vboIdx, vboVtx;
 	  unsigned int vboTessIdx, vboTessVtx;
 	  cudaGraphicsResource *dev_vboTessIdx, *dev_vboTessVtx;
+    
+    // physics data
+    glm::mat3 moi;
+    glm::vec3 cm;
+    float mass;
 
     bool objRead(const char *fName);
     bool objReadVtx(std::istream &fStream);

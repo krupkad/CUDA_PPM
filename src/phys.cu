@@ -1,7 +1,5 @@
 #include "ppm.hpp"
 
-#define GLM_FORCE_CUDA
-#include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 #include <thrust/reduce.h>
@@ -47,9 +45,9 @@ void PPM::physInit() {
   kCalcInertia<<<blkCnt,blkDim,nSM>>>(nFace, dev_heFaces, dev_vList, dev_moi, dev_mass, dev_cm);
   
   printf("phys reduce\n");
-  glm::mat3 moi = thrust::reduce(thrust::device, dev_moi, dev_moi+nFace);
-  float mass = thrust::reduce(thrust::device, dev_mass, dev_mass+nFace);
-  glm::vec3 cm = thrust::reduce(thrust::device, dev_cm, dev_cm+nFace) / mass;
+  moi = thrust::reduce(thrust::device, dev_moi, dev_moi+nFace);
+  mass = thrust::reduce(thrust::device, dev_mass, dev_mass+nFace);
+  cm = thrust::reduce(thrust::device, dev_cm, dev_cm+nFace) / mass;
   moi -= mass*glm::outerProduct(cm,cm);
   moi = glm::mat3(moi[0][0] + moi[1][1] + moi[2][2]) - moi;
   
