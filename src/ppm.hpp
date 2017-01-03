@@ -109,6 +109,7 @@ class PPM {
     void devCoeffInit();
     void devTessInit();
     void physInit();
+    void physTess();
     void cudaProbe();
 
     void genSampTex();
