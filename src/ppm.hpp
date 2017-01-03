@@ -73,7 +73,7 @@ class PPM {
     Bezier<float> *bezier;
     int4 *dev_heLoops, *dev_heFaces;
     float *dev_samp, *dev_coeff;
-    float2 *dev_bezPatch;
+    float *dev_bezPatch, *dev_wgtPatch;
     float2 *dev_uvIdxMap;
     int2 *dev_iuvIdxMap;
     float *dev_tessWgt;
