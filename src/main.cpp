@@ -320,14 +320,21 @@ int main(int argc, char *argv[]) {
 	  for (int i = r2; i <= r3; i++) {
 		  nSamp = nSub * (1 << i);
       ppm->rebuild(argv[1], nBasis, nSamp, nSub);
+
+      printf("%d -> ", nSamp);
       try {
         ppm->useTessSM = false;
-        float dt1 = ppm->update();
-        ppm->useTessSM = true;
-        float dt2 = ppm->update();
-        printf("%d -> %.3f %.3f ms\n", nSamp, dt1, dt2);
+        float dt = ppm->update();
+        printf("%f ", dt);
       } catch (const std::exception &e) {
-        printf("%d -> %s\n", nSamp, e.what());
+        printf("%s ", e.what());
+      }
+      try {
+        ppm->useTessSM = true;
+        float dt = ppm->update();
+        printf("%f\n", dt);
+      } catch (const std::exception &e) {
+        printf("%s\n", e.what());
       }
 	  }
 	}
@@ -343,15 +350,23 @@ int main(int argc, char *argv[]) {
 	  for (int i = r2; i <= r3; i++) {
       nSamp = nBasis = 2*(2 + i);
       ppm->rebuild(argv[1], nBasis, nSamp, nSub);
+      
+      printf("%d -> ", nBasis);
       try {
         ppm->useTessSM = false;
-        float dt1 = ppm->update();
-        ppm->useTessSM = true;
-        float dt2 = ppm->update();
-        printf("%d -> %.3f %.3f ms\n", nBasis, dt1, dt2);
+        float dt = ppm->update();
+        printf("%f ", dt);
       } catch (const std::exception &e) {
-        printf("%d -> %s\n", nSamp, e.what());
+        printf("%s ", e.what());
       }
+      try {
+        ppm->useTessSM = true;
+        float dt = ppm->update();
+        printf("%f\n", dt);
+      } catch (const std::exception &e) {
+        printf("%s\n", e.what());
+      }
+
 	  }
 	}
 	
@@ -367,14 +382,21 @@ int main(int argc, char *argv[]) {
 	  for (int i = r2; i <= r3; i++) {
       nSub = (1 << i);
       ppm->rebuild(argv[1], nBasis, nSamp, nSub);
+      
+      printf("%d -> ", nSub);
       try {
         ppm->useTessSM = false;
-        float dt1 = ppm->update();
-        ppm->useTessSM = true;
-        float dt2 = ppm->update();
-        printf("%d -> %.3f %.3f ms\n", nSub, dt1, dt2);
+        float dt = ppm->update();
+        printf("%f ", dt);
       } catch (const std::exception &e) {
-        printf("%d -> %s\n", nSamp, e.what());
+        printf("%s ", e.what());
+      }
+      try {
+        ppm->useTessSM = true;
+        float dt = ppm->update();
+        printf("%f\n", dt);
+      } catch (const std::exception &e) {
+        printf("%s\n", e.what());
       }
 	  }
 	}
