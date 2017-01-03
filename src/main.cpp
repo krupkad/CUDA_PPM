@@ -333,6 +333,83 @@ private:
 };
 
 int main(int argc, char *argv[]) {
+  if (argc > 1) {
+	
+	PPM *ppm = new PPM(false);
+	
+	int nBasis, nSamp, nSub;
+	int r2 = atoi(argv[3]), r3 = atoi(argv[4]);
+	if (!strcmp(argv[2], "--samp")) {
+	  if (argc != 7) {
+		  printf("usage: %s --samp [start end] deg sub\n", argv[0]);
+		  delete ppm;
+		  return 0;
+	  }
+	  
+	  nBasis = atoi(argv[5]);
+	  nSub = atoi(argv[6]);
+	  for (int i = r2; i <= r3; i++) {
+		  
+		nSamp = nSub * (1 << i);
+		ppm->rebuild(argv[1], nBasis, nSamp, nSub);
+		try {
+			float dt = ppm->update();
+			printf("%d -> %.3f ms\n", nSamp, dt);
+		} catch (const std::exception &e) {
+			printf("%d -> %s\n", nSamp, e.what());
+		}
+	  }
+	}
+	
+	else if (!strcmp(argv[2], "--deg")) {
+		if (argc != 6) {
+			printf("usage: %s --deg [start end] sub\n", argv[0]);
+			delete ppm;
+			return 0;
+		}
+		
+	  nSub = atoi(argv[5]);
+	  for (int i = r2; i <= r3; i++) {
+		nSamp = nBasis = 4*(1 << i);
+		ppm->rebuild(argv[1], nBasis, nSamp, nSub);
+		try {
+			float dt = ppm->update();
+			printf("%d -> %.3f ms\n", nBasis, dt);
+		} catch (const std::exception &e) {
+			printf("%d -> %s\n", nBasis, e.what());
+		}
+	  }
+	}
+	
+	else if (!strcmp(argv[2], "--sub")) {
+		if (argc != 7) {
+			printf("usage: %s --sub [start end] deg samp\n", argv[0]);
+			delete ppm;
+			return 0;
+		}
+		
+	  nBasis = atoi(argv[5]);
+	  nSamp = atoi(argv[6]);
+	  for (int i = r2; i <= r3; i++) {
+		nSub = (1 << i);
+		ppm->rebuild(argv[1], nBasis, nSamp, nSub);
+		try {
+			float dt = ppm->update();
+			printf("%d -> %.3f ms\n", nSub, dt);
+		} catch (const std::exception &e) {
+			printf("%d -> %s\n", nSub, e.what());
+		}
+	  }
+	}
+	
+	else {
+		printf("usage: %s [--samp, --deg, --sub]\n", argv[0]);
+	}
+	
+	delete ppm;
+	return 0;
+  }
+  
   // initialize graphics
   nanogui::init();
   PpmGui *gui = new PpmGui(1200, 800);

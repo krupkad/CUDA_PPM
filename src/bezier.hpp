@@ -94,26 +94,26 @@ struct Bezier {
 template <typename T>
 Bezier<T>::Bezier(int nBasis, int nGrid) : nBasis(nBasis), nGrid(nGrid) {
   cublasCreate(&handle);
-  printf("created cublas handle\n"); 
+  fprintf(stderr, "created cublas handle\n"); 
 
   nBasis2 = nBasis*nBasis;
   nGrid2 = nGrid*nGrid;
 
   mkGrid();
-  printf("made grid\n");
+  fprintf(stderr, "made grid\n");
 
   T *A = mkBasis(1024, 32);
-  printf("made basis\n");
+  fprintf(stderr, "made basis\n");
 
   svd(A);
   delete A;
-  printf("performed svd\n");
+  fprintf(stderr, "performed svd\n");
 
   mkLLSProj();
-  printf("created LLS matrix\n");
+  fprintf(stderr, "created LLS matrix\n");
 
   //genSvdTex(10);
-  //printf("generate SVD textures\n");
+  //fprintf(stderr, "generate SVD textures\n");
 
   //cudaDeviceSynchronize();
 }
@@ -251,7 +251,7 @@ void Bezier<T>::genSvdTex(int N) {
     }
   }
 
-  printf("allocating texture memory\n");
+  fprintf(stderr, "allocating texture memory\n");
   dev_texArray = nullptr;
   cudaChannelFormatDesc channel = cudaCreateChannelDesc<float>();
   cudaMalloc3DArray(&dev_texArray, &channel,
@@ -269,7 +269,7 @@ void Bezier<T>::genSvdTex(int N) {
   delete texData;
   checkCUDAError("cudaMemcpy3D", __LINE__);
 
-  printf("creating texture\n");
+  fprintf(stderr, "creating texture\n");
   cudaResourceDesc resDesc;
   memset(&resDesc, 0, sizeof resDesc);
   resDesc.resType = cudaResourceTypeArray;

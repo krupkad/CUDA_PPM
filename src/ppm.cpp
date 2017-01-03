@@ -46,11 +46,11 @@ void PPM::rebuild(const char *fName, int nBasis, int nGrid, int nSub) {
   }
   
   if (!objRead(fName)) {
-    printf("couldn't open file %s\n", fName);
+    fprintf(stderr, "couldn't open file %s\n", fName);
     return;
   }
   inFile = fName;
-  printf("read done\n");
+  fprintf(stderr, "read done\n");
 
   // tesselation controls
   this->nSub = nSub;
@@ -59,7 +59,7 @@ void PPM::rebuild(const char *fName, int nBasis, int nGrid, int nSub) {
 
   if (useVisualize) {
     visInit();
-    printf("vis done\n");
+    fprintf(stderr, "vis done\n");
   }
 
   this->nBasis = nBasis;
@@ -67,7 +67,7 @@ void PPM::rebuild(const char *fName, int nBasis, int nGrid, int nSub) {
   this->nBasis2 = nBasis*nBasis;
   this->nGrid2 = nGrid*nGrid;
   devInit();
-  printf("dev done\n");
+  fprintf(stderr, "dev done\n");
   
   // physics
   physInit();
@@ -166,7 +166,7 @@ bool PPM::objReadFace(std::istream &fStream) {
   unsigned int N = vIdxList.size();
 
   if (N != 3) {
-    printf("nontriangular face\n");
+    fprintf(stderr, "nontriangular face\n");
     return false;
   }
 
@@ -207,12 +207,12 @@ bool PPM::objRead(const char *fName) {
 
     if (type == "v") {
       if (!objReadVtx(ssLine))
-        printf("vtx read err: %s\n", line.c_str());
+        fprintf(stderr, "vtx read err: %s\n", line.c_str());
     }
 
     if (type == "f") {
       if (!objReadFace(ssLine))
-        printf("face read err: %s\n", line.c_str());
+        fprintf(stderr, "face read err: %s\n", line.c_str());
     }
   }
 
@@ -235,11 +235,11 @@ void PPM::visInit() {
   glGenBuffers(1, &vboTessVtx); // vList.size() vertices (3 floats)
   glGenBuffers(1, &vboTessIdx); // fList.size() indices (1 int)
 
-  printf("binding base VAO\n");
+  fprintf(stderr, "binding base VAO\n");
   glGenVertexArrays(1, &vaoBase);
   glBindVertexArray(vaoBase);
 
-  printf("loading vidx vbo\n");
+  fprintf(stderr, "loading vidx vbo\n");
   glBindBuffer(GL_ARRAY_BUFFER, vboVtx);
   glBufferData(GL_ARRAY_BUFFER, PPM_NVARS * nVtx*sizeof(float), &vList[0], GL_STATIC_DRAW);
   glEnableVertexAttribArray(0);
@@ -249,17 +249,17 @@ void PPM::visInit() {
   glEnableVertexAttribArray(2);
   glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, PPM_NVARS * sizeof(float), (const void*)(6* sizeof(float)));
 
-  printf("loading fidx vbo\n");
+  fprintf(stderr, "loading fidx vbo\n");
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboIdx);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, 3 * nFace*sizeof(int), &fList[0], GL_STATIC_DRAW);
   //glEnableVertexAttribArray(3);
   //glVertexAttribIPointer(3, GL_INT, 3, 0, (const void*)0);
 
-  printf("binding tess VAO\n");
+  fprintf(stderr, "binding tess VAO\n");
   glGenVertexArrays(1, &vaoTess);
   glBindVertexArray(vaoTess);
 
-  printf("loading vtx tess vbo\n");
+  fprintf(stderr, "loading vtx tess vbo\n");
   glBindBuffer(GL_ARRAY_BUFFER, vboTessVtx);
   glBufferData(GL_ARRAY_BUFFER, PPM_NVARS * nFace * nSubVtx * sizeof(float), 0, GL_STATIC_DRAW);
   cudaGraphicsGLRegisterBuffer(&dev_vboTessVtx, vboTessVtx, cudaGraphicsMapFlagsNone);
@@ -274,7 +274,7 @@ void PPM::visInit() {
   glBindBuffer(GL_ARRAY_BUFFER, vboTessVtx);
   glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, PPM_NVARS * sizeof(float), (const void*)(6* sizeof(float)));
 
-  printf("loading fidx tess vbo\n");
+  fprintf(stderr, "loading fidx tess vbo\n");
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboTessIdx);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, 3 * nFace * nSubFace * sizeof(int), 0, GL_STATIC_DRAW);
   cudaGraphicsGLRegisterBuffer(&dev_vboTessIdx, vboTessIdx, cudaGraphicsMapFlagsNone);

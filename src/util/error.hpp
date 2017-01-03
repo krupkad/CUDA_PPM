@@ -1,6 +1,10 @@
 #ifndef UTIL_ERROR_H
 #define UTIL_ERROR_H
 
+#include <string>
+#include <sstream>
+#include <stdexcept>
+
 #include <cuda_runtime.h>
 #include <cstdio>
 
@@ -8,11 +12,12 @@
 static void checkCUDAError(const char *msg, int line = -1) {
   cudaError_t err = cudaGetLastError();
   if (cudaSuccess != err) {
-    if (line >= 0) {
-      fprintf(stderr, "Line %d: ", line);
-    }
-    fprintf(stderr, "Cuda error: %s: %s.\n", msg, cudaGetErrorString(err));
-    exit(EXIT_FAILURE);
+	std::stringstream sstr;
+	sstr << "CUDA error: ";
+    if (line >= 0)
+	  sstr << "Line " << line << ":";
+    sstr << msg << ": " << cudaGetErrorString(err);
+    throw std::runtime_error(sstr.str());
   }
 }
 

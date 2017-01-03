@@ -325,7 +325,7 @@ __global__ void kTessEdges(int nFace, int nSub, const int2 *uvIdxMap, int *idxOu
 
 // generate sampling pattern textures
 void PPM::genSampTex() {
-  printf("populating patch maps (%d-%d = %d)\n", degMin, degMax, nDeg);
+  fprintf(stderr, "populating patch maps (%d-%d = %d)\n", degMin, degMax, nDeg);
   float4 *sampTexData = new float4[nGrid * nGrid * nDeg];
   for (int d = 0; d < nDeg; d++) {
     for (int j = 0; j < nGrid; j++) {
@@ -353,7 +353,7 @@ void PPM::genSampTex() {
     }
   }
 
-  printf("allocating texture memory\n");
+  fprintf(stderr, "allocating texture memory\n");
   dev_sampTexArray = nullptr;
   cudaChannelFormatDesc channel = cudaCreateChannelDesc<float4>();
   cudaMalloc3DArray(&dev_sampTexArray, &channel,
@@ -371,7 +371,7 @@ void PPM::genSampTex() {
   delete sampTexData;
   checkCUDAError("cudaMemcpy3D", __LINE__);
 
-  printf("creating texture\n");
+  fprintf(stderr, "creating texture\n");
   cudaResourceDesc resDesc;
   memset(&resDesc, 0, sizeof resDesc);
   resDesc.resType = cudaResourceTypeArray;
@@ -440,14 +440,14 @@ void PPM::devCoeffInit() {
 }
 
 void PPM::devMeshInit() {
-  printf("uploading mesh data\n");
+  fprintf(stderr, "uploading mesh data\n");
   devAlloc(&dev_vList, PPM_NVARS*nVtx*sizeof(float));
   cudaMemcpy(dev_vList, &vList[0],  PPM_NVARS*nVtx*sizeof(float), cudaMemcpyHostToDevice);
   devAlloc(&dev_heFaces, nHe*sizeof(int4));
   cudaMemcpy(dev_heFaces, &heFaces[0], nHe*sizeof(int4), cudaMemcpyHostToDevice);
 
   // populate the loops
-  printf("sorting loops\n");
+  fprintf(stderr, "sorting loops\n");
   getHeLoops();
   devAlloc(&dev_heLoops, nHe*sizeof(int4));
   cudaMemcpy(dev_heLoops, &heLoops[0], nHe*sizeof(int4), cudaMemcpyHostToDevice);
@@ -471,7 +471,7 @@ void PPM::devPatchInit() {
   bezier = new Bezier<float>(nBasis, nGrid);
 
   // build the uv index map
-  printf("creating uv index map %d\n", nSubVtx);
+  fprintf(stderr, "creating uv index map %d\n", nSubVtx);
   float2 *uvIdxMap = new float2[nSubVtx];
   int2 *iuvIdxMap = new int2[nSubVtx];
   for (int v = 0; v <= nSub; v++) {
@@ -487,7 +487,7 @@ void PPM::devPatchInit() {
   delete iuvIdxMap;
 
   // d*(d-1)/2 - dmin*(dmin-1)/2
-  printf("creating patch data\n");
+  fprintf(stderr, "creating patch data\n");
   devAlloc(&dev_bezPatch, nBasis2*nSubVtx*((degMax + 1)*degMax / 2 - degMin*(degMin - 1) / 2)*sizeof(float2));
   dim3 blkSize(16,16), blkCnt;
   blkCnt.x = (nDeg+blkSize.x-1)/blkSize.x;
@@ -500,13 +500,13 @@ void PPM::devPatchInit() {
     checkCUDAError("kBezEval", __LINE__);
   }
   
-  printf("creating sample data\n");
+  fprintf(stderr, "creating sample data\n");
   if (canUseTexObjs)
     genSampTex();
 }
 
 void PPM::devTessInit() {
-  printf("creating edge tesselation\n");
+  fprintf(stderr, "creating edge tesselation\n");
   if (useVisualize) {
     size_t nBytes;
     cudaGraphicsMapResources(1, &dev_vboTessIdx, 0);

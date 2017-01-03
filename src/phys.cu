@@ -32,7 +32,7 @@ __global__ void kCalcInertia(int nFace, const int4 *heFaces, const float *vtxDat
 }
 
 void PPM::physInit() {
-  printf("phys alloc\n");
+  fprintf(stderr, "phys alloc\n");
   glm::mat3 *dev_moi;
   cudaMalloc(&dev_moi, nFace*sizeof(glm::mat3));
   float *dev_mass;
@@ -40,7 +40,7 @@ void PPM::physInit() {
   glm::vec3 *dev_cm;
   cudaMalloc(&dev_cm, nFace*sizeof(glm::vec3));
   
-  printf("phys compute\n");
+  fprintf(stderr, "phys compute\n");
   dim3 blkDim(256), blkCnt((nFace + 255)/256);
   int nSM = (1+blkDim.x) * sizeof(glm::mat3);
   kCalcInertia<<<blkCnt,blkDim,nSM>>>(nFace, dev_heFaces, dev_vList, dev_moi, dev_mass, dev_cm);
@@ -49,7 +49,7 @@ void PPM::physInit() {
   thrust::device_ptr<glm::mat3> ptr_moi(dev_moi);
   thrust::device_ptr<glm::vec3> ptr_cm(dev_cm);
 
-  printf("phys reduce\n");
+  fprintf(stderr, "phys reduce\n");
   moi = thrust::reduce(ptr_moi, ptr_moi+nFace);
   mass = thrust::reduce(ptr_mass, ptr_mass+nFace);
   cm = thrust::reduce(ptr_cm, ptr_cm+nFace) / mass;
@@ -60,9 +60,9 @@ void PPM::physInit() {
   cudaFree(dev_mass);
   cudaFree(dev_cm);
   
-  printf("phys result: %f (%f %f %f)\n", mass, cm.x, cm.y, cm.z);
-  printf("%f %f %f\n", moi[0][0], moi[1][0], moi[2][0]);
-  printf("%f %f %f\n", moi[0][1], moi[1][1], moi[2][1]);
-  printf("%f %f %f\n\n", moi[0][2], moi[1][2], moi[2][2]);
+  fprintf(stderr, "phys result: %f (%f %f %f)\n", mass, cm.x, cm.y, cm.z);
+  fprintf(stderr, "%f %f %f\n", moi[0][0], moi[1][0], moi[2][0]);
+  fprintf(stderr, "%f %f %f\n", moi[0][1], moi[1][1], moi[2][1]);
+  fprintf(stderr, "%f %f %f\n\n", moi[0][2], moi[1][2], moi[2][2]);
 }
 
