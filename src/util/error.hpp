@@ -1,6 +1,9 @@
 #ifndef UTIL_ERROR_H
 #define UTIL_ERROR_H
 
+#undef min
+#undef max
+
 #include <string>
 #include <sstream>
 #include <stdexcept>

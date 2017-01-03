@@ -501,8 +501,10 @@ void PPM::devPatchInit() {
   }
   
   fprintf(stderr, "creating sample data\n");
-  if (canUseTexObjs)
+  if (canUseTexObjs) {
     genSampTex();
+    checkCUDAError("genSampTex", __LINE__);
+  }
 }
 
 void PPM::devTessInit() {

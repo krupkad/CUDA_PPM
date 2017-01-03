@@ -47,9 +47,9 @@ class PPM {
     bool useTessSM;
     bool useSampTex;
 
-    // functionality flags
+    // CUDA features
     bool canUseTexObjs;
-    
+
     // exposed mesh properties
     int nVtx, nFace, nHe;
     int nSub, nSubFace, nSubVtx;
@@ -109,6 +109,7 @@ class PPM {
     void devCoeffInit();
     void devTessInit();
     void physInit();
+    void cudaProbe();
 
     void genSampTex();
     void genCoeff();

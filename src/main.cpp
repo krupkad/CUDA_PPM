@@ -67,13 +67,6 @@ public:
   
     printf("PpmGui: creating ppm\n");
     ppm = new PPM(true);
- 
-    // check CUDA devices
-    int nDevices = cudaProbe();
-    if (!nDevices) {
-      printf("no CUDA device found\n");
-      throw;
-    }
 
     printf("PpmGui: compiling shader\n");
     shader = new Shader();
@@ -104,12 +97,10 @@ public:
     chkSM->setChecked(ppm->useTessSM);
     chkSM->setCallback([this](bool value) { ppm->useTessSM = value; });
 
-    CheckBox *chkSampTex = new CheckBox(tools, "Use Tex Samp");
     if (ppm->canUseTexObjs) {
+      CheckBox *chkSampTex = new CheckBox(tools, "Use Tex Samp");
       chkSampTex->setChecked(ppm->useSampTex);
       chkSampTex->setCallback([this](bool value) { ppm->useSampTex = value; });
-    } else {
-      chkSampTex->setCallback([this,chkSampTex](bool value) { chkSampTex->setChecked(false); });
     }
     
     new Label(tools, "nBasis");
@@ -285,28 +276,6 @@ public:
     return false;
   }
 
-  int cudaProbe() {
-    int nDevices;
-    cudaGetDeviceCount(&nDevices);
-    for (int i = 0; i < nDevices; i++) {
-      cudaDeviceProp prop;
-      cudaGetDeviceProperties(&prop, i);
-      checkCUDAError("cudaGetDeviceProperties", __LINE__);
-      
-      printf("Device Number: %d\n", i);
-      printf("  Device name: %s\n", prop.name);
-      printf("  Compute capability: %d.%d", prop.major, prop.minor);
-      if (prop.major < 3) {
-        printf(" (< 3.0, disabling texSamp)");
-        ppm->canUseTexObjs = false;
-      } else {
-        ppm->canUseTexObjs = true;
-      }
-      printf("\n");
-    }
-    return nDevices;
-  }
-
 private:
   PPM *ppm;
   std::string fName;
@@ -349,15 +318,17 @@ int main(int argc, char *argv[]) {
 	  nBasis = atoi(argv[5]);
 	  nSub = atoi(argv[6]);
 	  for (int i = r2; i <= r3; i++) {
-		  
-		nSamp = nSub * (1 << i);
-		ppm->rebuild(argv[1], nBasis, nSamp, nSub);
-		try {
-			float dt = ppm->update();
-			printf("%d -> %.3f ms\n", nSamp, dt);
-		} catch (const std::exception &e) {
-			printf("%d -> %s\n", nSamp, e.what());
-		}
+		  nSamp = nSub * (1 << i);
+      ppm->rebuild(argv[1], nBasis, nSamp, nSub);
+      try {
+        ppm->useTessSM = false;
+        float dt1 = ppm->update();
+        ppm->useTessSM = true;
+        float dt2 = ppm->update();
+        printf("%d -> %.3f %.3f ms\n", nSamp, dt1, dt2);
+      } catch (const std::exception &e) {
+        printf("%d -> %s\n", nSamp, e.what());
+      }
 	  }
 	}
 	
@@ -370,14 +341,17 @@ int main(int argc, char *argv[]) {
 		
 	  nSub = atoi(argv[5]);
 	  for (int i = r2; i <= r3; i++) {
-		nSamp = nBasis = 4*(1 << i);
-		ppm->rebuild(argv[1], nBasis, nSamp, nSub);
-		try {
-			float dt = ppm->update();
-			printf("%d -> %.3f ms\n", nBasis, dt);
-		} catch (const std::exception &e) {
-			printf("%d -> %s\n", nBasis, e.what());
-		}
+      nSamp = nBasis = 2*(2 + i);
+      ppm->rebuild(argv[1], nBasis, nSamp, nSub);
+      try {
+        ppm->useTessSM = false;
+        float dt1 = ppm->update();
+        ppm->useTessSM = true;
+        float dt2 = ppm->update();
+        printf("%d -> %.3f %.3f ms\n", nBasis, dt1, dt2);
+      } catch (const std::exception &e) {
+        printf("%d -> %s\n", nSamp, e.what());
+      }
 	  }
 	}
 	
@@ -391,14 +365,17 @@ int main(int argc, char *argv[]) {
 	  nBasis = atoi(argv[5]);
 	  nSamp = atoi(argv[6]);
 	  for (int i = r2; i <= r3; i++) {
-		nSub = (1 << i);
-		ppm->rebuild(argv[1], nBasis, nSamp, nSub);
-		try {
-			float dt = ppm->update();
-			printf("%d -> %.3f ms\n", nSub, dt);
-		} catch (const std::exception &e) {
-			printf("%d -> %s\n", nSub, e.what());
-		}
+      nSub = (1 << i);
+      ppm->rebuild(argv[1], nBasis, nSamp, nSub);
+      try {
+        ppm->useTessSM = false;
+        float dt1 = ppm->update();
+        ppm->useTessSM = true;
+        float dt2 = ppm->update();
+        printf("%d -> %.3f %.3f ms\n", nSub, dt1, dt2);
+      } catch (const std::exception &e) {
+        printf("%d -> %s\n", nSamp, e.what());
+      }
 	  }
 	}
 	

@@ -57,6 +57,9 @@ void PPM::rebuild(const char *fName, int nBasis, int nGrid, int nSub) {
   this->nSubFace = nSub*nSub;
   this->nSubVtx = (nSub + 1)*(nSub + 2) / 2;
 
+  // check CUDA features
+  cudaProbe();
+
   if (useVisualize) {
     visInit();
     fprintf(stderr, "vis done\n");
@@ -350,5 +353,27 @@ void PPM::visFree() {
   glDeleteVertexArrays(1, &vaoTess); // vList.size() vertices (3 floats)
 }
 
+void PPM::cudaProbe() {
+    int nDevices;
+    cudaGetDeviceCount(&nDevices);
+    if (nDevices <= 0)
+      throw std::runtime_error("No CUDA device detected");
 
+    for (int i = 0; i < nDevices; i++) {
+      cudaDeviceProp prop;
+      cudaGetDeviceProperties(&prop, i);
+      checkCUDAError("cudaGetDeviceProperties", __LINE__);
+      
+      fprintf(stderr, "Device Number: %d\n", i);
+      fprintf(stderr, "  Device name: %s\n", prop.name);
+      fprintf(stderr, "  Compute capability: %d.%d", prop.major, prop.minor);
+      if (prop.major < 3) {
+        fprintf(stderr, " (< 3.0, disabling texSamp)");
+        canUseTexObjs = false;
+      } else {
+        canUseTexObjs = true;
+      }
+      fprintf(stderr, "\n");
+    }
+  }
 
