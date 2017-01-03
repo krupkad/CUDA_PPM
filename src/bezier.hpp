@@ -162,7 +162,7 @@ template <typename T>
 void Bezier<T>::getCoeff(int nSamp, T *dev_samp, T *dev_coeff) {
   T alpha = 1.0, beta = 0.0;
   LA<T>::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, // column-major
-              nBasis2, 8*nSamp, nGrid2,
+              nBasis2, 6*nSamp, nGrid2,
               &alpha, dev_LLS_proj, nBasis2,
               dev_samp, nGrid2, &beta,
               dev_coeff, nBasis2);

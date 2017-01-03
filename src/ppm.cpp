@@ -136,7 +136,7 @@ bool PPM::objReadVtx(std::istream &fStream) {
     fStream >> p;
     vList.push_back(p);
   }
-  for (int i = 0; i < 5; i++)
+  for (int i = 0; i < 3; i++)
     vList.push_back(0.0f);
 
   return true;
@@ -161,7 +161,7 @@ bool PPM::objReadFace(std::istream &fStream) {
     if (vIdx >= 0)
       vIdxList.push_back(vIdx);
     else
-      vIdxList.push_back(vList.size()/8 + vIdx + 1);
+      vIdxList.push_back(vList.size()/PPM_NVARS + vIdx + 1);
   }
   unsigned int N = vIdxList.size();
 
@@ -217,13 +217,12 @@ bool PPM::objRead(const char *fName) {
   }
 
   // check that vertex indices are valid
-  unsigned int N = vList.size()/8;
+  nVtx = vList.size()/PPM_NVARS;
   for (const int4 &v : heFaces) {
-    if (v.x < 0 || v.x >= N || v.y < 0 || v.y >= N) return false;
+    if (v.x < 0 || v.x >= nVtx || v.y < 0 || v.y >= nVtx) return false;
   }
 
   // get the vertex count
-  nVtx = vList.size()/8;
   nHe = heFaces.size();
   nFace = nHe / 3;
 
@@ -242,13 +241,13 @@ void PPM::visInit() {
 
   printf("loading vidx vbo\n");
   glBindBuffer(GL_ARRAY_BUFFER, vboVtx);
-  glBufferData(GL_ARRAY_BUFFER, 8 * nVtx*sizeof(float), &vList[0], GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, PPM_NVARS * nVtx*sizeof(float), &vList[0], GL_STATIC_DRAW);
   glEnableVertexAttribArray(0);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, PPM_NVARS * sizeof(float), (const void*)0);
   glEnableVertexAttribArray(1);
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)(3* sizeof(float)));
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, PPM_NVARS * sizeof(float), (const void*)(3* sizeof(float)));
   glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)(6* sizeof(float)));
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, PPM_NVARS * sizeof(float), (const void*)(6* sizeof(float)));
 
   printf("loading fidx vbo\n");
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboIdx);
@@ -262,18 +261,18 @@ void PPM::visInit() {
 
   printf("loading vtx tess vbo\n");
   glBindBuffer(GL_ARRAY_BUFFER, vboTessVtx);
-  glBufferData(GL_ARRAY_BUFFER, 8 * nFace * nSubVtx * sizeof(float), 0, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, PPM_NVARS * nFace * nSubVtx * sizeof(float), 0, GL_STATIC_DRAW);
   cudaGraphicsGLRegisterBuffer(&dev_vboTessVtx, vboTessVtx, cudaGraphicsMapFlagsNone);
   checkCUDAError("cudaGraphicsGLRegisterBuffer", __LINE__);
   glEnableVertexAttribArray(0);
   glBindBuffer(GL_ARRAY_BUFFER, vboTessVtx);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, PPM_NVARS * sizeof(float), (const void*)0);
   glEnableVertexAttribArray(1);
   glBindBuffer(GL_ARRAY_BUFFER, vboTessVtx);
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)(3 * sizeof(float)));
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, PPM_NVARS * sizeof(float), (const void*)(3 * sizeof(float)));
   glEnableVertexAttribArray(2);
   glBindBuffer(GL_ARRAY_BUFFER, vboTessVtx);
-  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (const void*)(6* sizeof(float)));
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, PPM_NVARS * sizeof(float), (const void*)(6* sizeof(float)));
 
   printf("loading fidx tess vbo\n");
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboTessIdx);
@@ -294,9 +293,9 @@ void PPM::draw(Shader *vShader, Shader *tShader) {
 	  vShader->setUniform("uColor", 0.8f, 0.2f, 0.1f);
     vShader->setUniform("nShade", false);
     glBindVertexArray(vaoBase);
-    //vShader->bindVertexData("Position", vboVtx, SHADER_SSO(3, 8, 0));
-    //vShader->bindVertexData("Normal", vboVtx, SHADER_SSO(3, 8, 3));
-    //vShader->bindVertexData("UV", vboVtx, SHADER_SSO(2, 8, 6));
+    //vShader->bindVertexData("Position", vboVtx, SHADER_SSO(3, PPM_NVARS, 0));
+    //vShader->bindVertexData("Normal", vboVtx, SHADER_SSO(3, PPM_NVARS, 3));
+    //vShader->bindVertexData("UV", vboVtx, SHADER_SSO(2, PPM_NVARS, 6));
     vShader->bindIndexData(vboIdx);
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glDrawElements(GL_TRIANGLES, 3 * nFace, GL_UNSIGNED_INT, 0);
@@ -306,9 +305,9 @@ void PPM::draw(Shader *vShader, Shader *tShader) {
     vShader->setUniform("uColor", 0.3, 0.3f, 0.0f);
     vShader->setUniform("nShade", false);
     glBindVertexArray(vaoTess);
-    //vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3, 8, 0));
-    //vShader->bindVertexData("Normal", vboTessVtx, SHADER_SSO(3, 8, 3));
-    //vShader->bindVertexData("UV", vboTessVtx, SHADER_SSO(2, 8, 6));
+    //vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3, PPM_NVARS, 0));
+    //vShader->bindVertexData("Normal", vboTessVtx, SHADER_SSO(3, PPM_NVARS, 3));
+    //vShader->bindVertexData("UV", vboTessVtx, SHADER_SSO(2, PPM_NVARS, 6));
     vShader->bindIndexData(vboTessIdx);
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glDrawElements(GL_TRIANGLES, 3 * nFace*nSubFace, GL_UNSIGNED_INT, 0);
@@ -322,9 +321,9 @@ void PPM::draw(Shader *vShader, Shader *tShader) {
     vShader->setUniform("nShade", true);
     vShader->setUniform("dbgNormals", visDbgNormals);
     glBindVertexArray(vaoTess);
-    //vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3, 8, 0));
-    //vShader->bindVertexData("Normal", vboTessVtx, SHADER_SSO(3, 8, 3));
-    //vShader->bindVertexData("UV", vboTessVtx, SHADER_SSO(2, 8, 6));
+    //vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3, PPM_NVARS, 0));
+    //vShader->bindVertexData("Normal", vboTessVtx, SHADER_SSO(3, PPM_NVARS, 3));
+    //vShader->bindVertexData("UV", vboTessVtx, SHADER_SSO(2, PPM_NVARS, 6));
     vShader->bindIndexData(vboTessIdx);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glDrawElements(GL_TRIANGLES, 3 * nFace*nSubFace, GL_UNSIGNED_INT, 0);

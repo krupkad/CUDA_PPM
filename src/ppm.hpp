@@ -23,6 +23,8 @@
 
 #include "shader.hpp"
 
+#define PPM_NVARS 6
+
 template <typename T>
 class Bezier;
 
