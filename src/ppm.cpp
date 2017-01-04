@@ -264,7 +264,7 @@ void PPM::visInit() {
 
   fprintf(stderr, "loading vtx tess vbo\n");
   glBindBuffer(GL_ARRAY_BUFFER, vboTessVtx);
-  glBufferData(GL_ARRAY_BUFFER, PPM_NVARS * nFace * nSubVtx * sizeof(float), 0, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, PPM_NVARS * (nFace*(nSub-1)*(nSub)/2 + nHe*(nSub-1) + nVtx) * sizeof(float), 0, GL_STATIC_DRAW);
   cudaGraphicsGLRegisterBuffer(&dev_vboTessVtx, vboTessVtx, cudaGraphicsMapFlagsNone);
   checkCUDAError("cudaGraphicsGLRegisterBuffer", __LINE__);
   glEnableVertexAttribArray(0);

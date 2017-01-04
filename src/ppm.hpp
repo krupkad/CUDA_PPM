@@ -76,6 +76,7 @@ class PPM {
     float *dev_bezPatch, *dev_wgtPatch;
     float2 *dev_uvIdxMap;
     int2 *dev_iuvIdxMap;
+    int2 *dev_iuvInternalIdxMap;
     float *dev_tessWgt;
     int *dev_tessIdx;
     float *dev_tessVtx;
