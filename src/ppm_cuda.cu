@@ -145,39 +145,99 @@ __global__ void kMeshSampleOrig(int nVert, int nGrid, int degMin,
     samp[sIdx + i * sDim] = p0[i] * w + p1[i] * u + p2[i] * v;
 }
 
-__device__ float kPatchContrib(int dataIdx, int degMin, int nBasis2, int nVtx, int uvIdx, int nSubVtx,
+__global__ void kGetHeTessInfo(int nHe, int degMin, const int4 *heLoops, int4 *heTarg, const int2 *vBndList) {
+  int heIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  if (heIdx >= nHe)
+    return;
+  
+  int4 &he = heTarg[heIdx];
+  he.z = he.z + (he.w*(he.w - 1) - degMin*(degMin - 1)) / 2;
+  
+  he.w = -1;
+  const int2 &bnd = vBndList[he.y];
+  for (int i = bnd.x; i < bnd.y; i++) {
+    if (heLoops[i].y == he.x) {
+      he.w = i;
+      break;
+    }
+  }
+}
+
+__device__ float kPatchContrib(int dataIdx,  int nBasis2, int nVtx, int uvIdx, int nSubVtx,
                                const int4 &he, const float *bezData, const float *wgtData, const float *coeff, float &res) {
-  int dOff = he.z + (he.w*(he.w - 1) - degMin*(degMin - 1)) / 2;
-  const float *bez = &bezData[dOff*nSubVtx*nBasis2 + uvIdx*nBasis2];
-  float w = wgtData[dOff*nSubVtx + uvIdx];
+  const float *bez = &bezData[(he.z*nSubVtx + uvIdx)*nBasis2];
+  float w = wgtData[he.z*nSubVtx + uvIdx];
   for (int i = 0; i < nBasis2; i++)
-    res += w * bez[i] * coeff[i + he.x*nBasis2 + dataIdx * nBasis2*nVtx];
+    res += w * bez[i] * coeff[i + (he.x + dataIdx * nVtx) * nBasis2];
   return w;
 }
 
 // generate the per-face template for tessellation
 #define UV_IDX(u,v) (((u)+(v)+1)*((u)+(v))/2 + (v))
-__global__ void kTessVtx(int nVtx, int nFace, int nSub, int nSubVtx, int nBasis2, int degMin,
+__global__ void kTessVtx_Face(int nVtx, int nFace, int nSub, int nBasis2,
                         const int4 *heFaces, const float *bezData, const float *wgtData, const float *coeff,
                         const int2 *uvIdxMap, float *vDataOut) {
   int fIdx = blockIdx.x * blockDim.x + threadIdx.x;
   int uvIdx = blockIdx.y * blockDim.y + threadIdx.y;
   int dataIdx = blockIdx.z * blockDim.z + threadIdx.z;
+  int nSubVtx = (nSub+1)*(nSub+2)/2;
   if (fIdx >= nFace || uvIdx >= nSubVtx || dataIdx >= PPM_NVARS)
+    return;
+    
+  const int2 &uv = uvIdxMap[uvIdx];
+  if (uv.x == 0 || uv.y == 0 || uv.x+uv.y == nSub)
     return;
 
   const int4 &he0 = heFaces[3 * fIdx + 0];
   const int4 &he1 = heFaces[3 * fIdx + 1];
   const int4 &he2 = heFaces[3 * fIdx + 2];
 
-  const int2 &uv = uvIdxMap[uvIdx];
+  float res = 0.0, wgt = 0.0;
+  wgt += kPatchContrib(dataIdx, nBasis2, nVtx, UV_IDX(uv.x, uv.y), nSubVtx, he0, bezData, wgtData, coeff, res);
+  wgt += kPatchContrib(dataIdx, nBasis2, nVtx, UV_IDX(uv.y, nSub - uv.x - uv.y), nSubVtx, he1, bezData, wgtData, coeff, res);
+  wgt += kPatchContrib(dataIdx, nBasis2, nVtx, UV_IDX(nSub - uv.x - uv.y, uv.x), nSubVtx, he2, bezData, wgtData, coeff, res);
+
+  vDataOut[PPM_NVARS*(fIdx*(nSub-2)*(nSub-1)/2 + UV_IDX(uv.x-1,uv.y-1)) + dataIdx] = res / wgt;
+}
+
+__global__ void kTessVtx_Edge(int nVtx, int nHe, int nFace, int nSub, int nBasis2,
+                        const int4 *heLoops, const float *bezData, const float *wgtData, const float *coeff,
+                        const int2 *uvIdxMap, float *vDataOut) {
+  int heIdx = blockIdx.x * blockDim.x + threadIdx.x;
+  int uIdx = blockIdx.y * blockDim.y + threadIdx.y;
+  int dataIdx = blockIdx.z * blockDim.z + threadIdx.z;
+  int nSubVtx = (nSub+1)*(nSub+2)/2;
+  if (heIdx >= nHe || uIdx >= nSub-1 || dataIdx >= PPM_NVARS)
+    return;
+
+  const int4 &he0 = heLoops[heIdx];
+  const int4 &he1 = heLoops[he0.w];
+  if (heIdx >= he0.w)
+    return;
 
   float res = 0.0, wgt = 0.0;
-  wgt += kPatchContrib(dataIdx, degMin, nBasis2, nVtx, UV_IDX(uv.x, uv.y), nSubVtx, he0, bezData, wgtData, coeff, res);
-  wgt += kPatchContrib(dataIdx, degMin, nBasis2, nVtx, UV_IDX(uv.y, nSub - uv.x - uv.y), nSubVtx, he1, bezData, wgtData, coeff, res);
-  wgt += kPatchContrib(dataIdx, degMin, nBasis2, nVtx, UV_IDX(nSub - uv.x - uv.y, uv.x), nSubVtx, he2, bezData, wgtData, coeff, res);
+  wgt += kPatchContrib(dataIdx, nBasis2, nVtx, UV_IDX(uIdx+1,0), nSubVtx, he0, bezData, wgtData, coeff, res);
+  wgt += kPatchContrib(dataIdx, nBasis2, nVtx, UV_IDX(nSub-uIdx-1,0), nSubVtx, he1, bezData, wgtData, coeff, res);
 
-  vDataOut[PPM_NVARS*(fIdx*nSubVtx + uvIdx) + dataIdx] = res / wgt;
+  nSubVtx = nSub*(nSub+1)/2;
+  vDataOut[PPM_NVARS*(heIdx*(nSub-1) + uIdx) + dataIdx] = res / wgt;
+}
+
+__global__ void kTessVtx_Vtx(int nVtx, int nFace, int nHe, int nSub,  int nBasis2,
+                        const int4 *heLoops, const int2 *vBndList, 
+                        const float *bezData, const float *wgtData, const float *coeff,
+                        float *vDataOut) {
+  int vIdx = blockIdx.x * blockDim.x + threadIdx.x;
+  int dataIdx = blockIdx.y * blockDim.y + threadIdx.y;
+  if (vIdx >= nVtx || dataIdx >= PPM_NVARS)
+    return;
+
+  const int4 &he = heLoops[vBndList[vIdx].x];
+
+  int nSubVtx = (nSub+1)*(nSub+2)/2;
+  float res = 0.0;
+  float wgt = kPatchContrib(dataIdx, nBasis2, nVtx, UV_IDX(0,0), nSubVtx, he, bezData, wgtData, coeff, res);
+  vDataOut[PPM_NVARS*vIdx + dataIdx] = res / wgt;
 }
 
 __global__ void kWeightScale(int nFace, int nSubVtx, float *vData, float *wgt) {
@@ -297,7 +357,44 @@ __global__ void kUpdateCoeffSM(int nBasis2, int nSamp, float *V, float sigma, fl
   __syncthreads();
 }
 
-__global__ void kTessEdges(int nFace, int nSub, const int2 *uvIdxMap, int *idxOut) {
+__device__ inline int tessGetIdx(int u, int v, const int4 *heLoops, const int4 *heFaces, int fIdx, 
+                          int nVtx, int nHe, int nFace, int nSub) {
+  const int4 &he0 = heFaces[3*fIdx+0];
+  const int4 &he1 = heFaces[3*fIdx+1];
+  const int4 &he2 = heFaces[3*fIdx+2];
+  int w = nSub-u-v;
+  
+  if (u == 0 && v == 0)
+    return nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1) + he0.x;
+  if (w == 0 && v == 0)
+    return nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1) + he1.x;
+  if (u == 0 && w == 0)
+    return nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1) + he2.x;
+  
+  if (v == 0) {
+    if (he0.w < heLoops[he0.w].w)
+      return nFace*(nSub-1)*(nSub-2)/2 + he0.w*(nSub-1) + w-1;
+    else
+      return nFace*(nSub-1)*(nSub-2)/2 + heLoops[he0.w].w*(nSub-1) + u-1;
+  }
+  if (w == 0) {
+    if (he1.w < heLoops[he1.w].w)
+      return nFace*(nSub-1)*(nSub-2)/2 + he1.w*(nSub-1) + u-1;
+    else
+      return nFace*(nSub-1)*(nSub-2)/2 + heLoops[he1.w].w*(nSub-1) + v-1;
+  }
+  if (u == 0) {
+    if (he2.w < heLoops[he2.w].w)
+      return nFace*(nSub-1)*(nSub-2)/2 + he2.w*(nSub-1) + v-1;
+    else
+      return nFace*(nSub-1)*(nSub-2)/2 + heLoops[he2.w].w*(nSub-1) + w-1;
+  }
+  
+  return fIdx*(nSub-1)*(nSub-2)/2 + UV_IDX(u-1,v-1);
+    
+}
+
+__global__ void kTessEdges(int nVtx, int nHe, int nFace, int nSub, const int4 *heLoops, const int4 *heFaces, const int2 *uvIdxMap, int *idxOut) {
   int fIdx = blockIdx.x * blockDim.x + threadIdx.x;
   int vSubIdx = blockIdx.y * blockDim.y + threadIdx.y;
   int nSubVtx = (nSub + 1)*(nSub + 2) / 2;
@@ -307,19 +404,19 @@ __global__ void kTessEdges(int nFace, int nSub, const int2 *uvIdxMap, int *idxOu
 
   int fSubIdx;
   const int2 &uv = uvIdxMap[vSubIdx];
-
+  
   if (uv.x > 0 && uv.y > 0) {
     fSubIdx = fIdx*nSubFace + UV_IDX(uv.x - 1, uv.y - 1) + nSubVtx - nSub - 1;
-    idxOut[3*fSubIdx + 0] = fIdx*nSubVtx + UV_IDX(uv.x, uv.y);
-    idxOut[3*fSubIdx + 1] = fIdx*nSubVtx + UV_IDX(uv.x-1, uv.y);
-    idxOut[3*fSubIdx + 2] = fIdx*nSubVtx + UV_IDX(uv.x, uv.y-1);
+    idxOut[3*fSubIdx + 0] = tessGetIdx(uv.x, uv.y, heLoops, heFaces, fIdx, nVtx, nHe, nFace, nSub);
+    idxOut[3*fSubIdx + 1] = tessGetIdx(uv.x-1, uv.y, heLoops, heFaces, fIdx, nVtx, nHe, nFace, nSub);
+    idxOut[3*fSubIdx + 2] = tessGetIdx(uv.x, uv.y-1, heLoops, heFaces, fIdx, nVtx, nHe, nFace, nSub);
   }
 
   if (uv.x+uv.y < nSub) {
     fSubIdx = fIdx*nSubFace + UV_IDX(uv.x, uv.y);
-    idxOut[3*fSubIdx + 0] = fIdx*nSubVtx + UV_IDX(uv.x, uv.y);
-    idxOut[3*fSubIdx + 1] = fIdx*nSubVtx + UV_IDX(uv.x+1, uv.y);
-    idxOut[3 * fSubIdx + 2] = fIdx*nSubVtx + UV_IDX(uv.x, uv.y + 1);
+    idxOut[3*fSubIdx + 0] = tessGetIdx(uv.x, uv.y, heLoops, heFaces, fIdx, nVtx, nHe, nFace, nSub);
+    idxOut[3*fSubIdx + 1] = tessGetIdx(uv.x+1, uv.y, heLoops, heFaces, fIdx, nVtx, nHe, nFace, nSub);
+    idxOut[3*fSubIdx + 2] = tessGetIdx(uv.x, uv.y + 1, heLoops, heFaces, fIdx, nVtx, nHe, nFace, nSub);
   }
 }
 
@@ -517,11 +614,16 @@ void PPM::devTessInit() {
   } else {
     devAlloc(&dev_tessIdx, 3*nFace*nSubFace*sizeof(int));
   }
+  
+  dim3 blkSize(1024), blkCnt((nHe +1023) / 1024);
+  kGetHeTessInfo<<<blkCnt, blkSize>>>(nHe, degMin, dev_heLoops, dev_heFaces, dev_vBndList);
+  kGetHeTessInfo<<<blkCnt, blkSize>>>(nHe, degMin, dev_heLoops, dev_heLoops, dev_vBndList);
 
-  dim3 blkSize(64,16), blkCnt;
+  blkSize.x = 64;
+  blkSize.y = 16;
   blkCnt.x = (nFace + blkSize.x - 1) / blkSize.x;
   blkCnt.y = (nSubVtx + blkSize.y - 1) / blkSize.y;
-  kTessEdges<<<blkCnt, blkSize>>>(nFace, nSub, dev_iuvIdxMap, dev_tessIdx);
+  kTessEdges<<<blkCnt, blkSize>>>(nVtx, nHe, nFace, nSub, dev_heLoops, dev_heFaces, dev_iuvIdxMap, dev_tessIdx);
   checkCUDAError("kTessEdges", __LINE__);
   
   if (useVisualize)
@@ -537,8 +639,8 @@ void PPM::devTessInit() {
 void PPM::devInit() {
   devMeshInit();
   devPatchInit();
-  devTessInit();
   devCoeffInit();
+  devTessInit();
 }
 
 void PPM::updateCoeff() {
@@ -570,6 +672,7 @@ float PPM::update() {
     cudaGraphicsMapResources(1, &dev_vboTessVtx, 0);
     cudaGraphicsResourceGetMappedPointer((void**)&dev_tessVtx, &nBytes, dev_vboTessVtx);
   }
+  /*
   if (useTessSM) {
     cudaMemset(dev_tessVtx, 0, PPM_NVARS * nFace*nSubVtx*sizeof(float));
     cudaMemset(dev_tessWgt, 0, nFace*nSubVtx*sizeof(float));
@@ -605,6 +708,44 @@ float PPM::update() {
       dev_heFaces, dev_bezPatch, dev_wgtPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx);
     checkCUDAError("kTessVtx", __LINE__);
   }
+  */
+  
+  cudaMemset(dev_tessVtx, 0, PPM_NVARS * nFace*nSubVtx*sizeof(float));
+  
+  if (nSub > 2) {
+    blkDim.x = 16;
+    blkDim.y = 8;
+    blkDim.z = 8;
+    blkCnt.x = (nFace + blkDim.x - 1) / blkDim.x;
+    blkCnt.y = (nSubVtx + blkDim.y - 1) / blkDim.y;
+    blkCnt.z = (PPM_NVARS + blkDim.z - 1) / blkDim.z;
+    kTessVtx_Face<<<blkCnt, blkDim>>>(nVtx, nFace, nSub, nBasis2,
+      dev_heFaces, dev_bezPatch, dev_wgtPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx);
+    checkCUDAError("kTessVtx_Face", __LINE__);
+  }
+  
+  if (nSub > 1) {
+    blkDim.x = 64;
+    blkDim.y = 4;
+    blkDim.z = 4;
+    blkCnt.x = (nHe + blkDim.x - 1) / blkDim.x;
+    blkCnt.y = (nSub-1 + blkDim.y - 1) / blkDim.y;
+    blkCnt.z = (PPM_NVARS + blkDim.z - 1) / blkDim.z;
+    kTessVtx_Edge<<<blkCnt, blkDim>>>(nVtx, nHe, nFace, nSub, nBasis2,
+      dev_heLoops, dev_bezPatch, dev_wgtPatch, dev_coeff, dev_iuvIdxMap, dev_tessVtx + PPM_NVARS*nFace*(nSub-1)*(nSub-2)/2);
+    checkCUDAError("kTessVtx_Edge", __LINE__);
+  }
+  
+  blkDim.x = 64;
+  blkDim.y = 16;
+  blkDim.z = 1;
+  blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
+  blkCnt.y = (PPM_NVARS + blkDim.y - 1) / blkDim.y;
+  blkCnt.z = 1;
+  kTessVtx_Vtx<<<blkCnt, blkDim>>>(nVtx, nFace, nHe, nSub, nBasis2,
+    dev_heLoops, dev_vBndList, dev_bezPatch, dev_wgtPatch, dev_coeff, dev_tessVtx + PPM_NVARS*(nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1)));
+  checkCUDAError("kTessVtx_Vtx", __LINE__);
+  
   if (useVisualize)
     cudaGraphicsUnmapResources(1, &dev_vboTessVtx, 0);
 
