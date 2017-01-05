@@ -71,8 +71,7 @@ class PPM {
     float *dev_vList;
     int2 *dev_vBndList;
     Bezier<float> *bezier;
-    int4 *dev_heLoops, *dev_heFaces;
-    int *dev_heTessIdx;
+    int4 *dev_heLoops, *dev_heFaces, *dev_heLoopsOrder;
     float *dev_samp, *dev_coeff;
     float *dev_bezPatch, *dev_wgtPatch;
     float2 *dev_uvIdxMap;

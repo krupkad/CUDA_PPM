@@ -5,6 +5,7 @@
 #include <thrust/device_vector.h>
 #include <thrust/device_ptr.h>
 #include <thrust/sort.h>
+#include <thrust/copy.h>
 
 // output weights and bezier basis coefficients for tessellated subvertices of a patch
 __global__ void kBezEval(int deg, int nBasis, int nSubVtx, const float2 *uvIdxMap, float *bzOut, float *wgtOut) {
@@ -178,6 +179,17 @@ __global__ void kGetHeTessIdx(int nHe, const int4 *heLoops, int *heTessIdx) {
     heTessIdx[heIdx] = heLoops[heIdx].w+1;
 }
 
+__global__ void kGetHeTessOrder(int nHe, const int4 *dev_heLoops, const int *dev_heTessIdx, int4 *dev_heLoopsOrder) {
+  int heIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  if (heIdx >= nHe/2)
+    return;
+
+  int idx = -dev_heTessIdx[heIdx]-1;
+  const int4 &he0 = dev_heLoops[idx];
+  const int4 &he1 = dev_heLoops[he0.w];
+  dev_heLoopsOrder[heIdx] = make_int4(he0.x, he0.z, he1.x, he1.z);
+}
+
 __device__ inline float patchContrib(int dIdx, int vIdx, int nBasis2, const float *bez, const float *wgt, const float *coeff, float &res) {
   bez = &bez[dIdx*nBasis2];
   float w = wgt[dIdx];
@@ -212,7 +224,7 @@ __global__ void kTessVtx_Face(int nVtx, int nFace, int nSub, int nBasis2,
 }
 
 __global__ void kTessVtx_Edge(int nVtx, int nHe, int nSub, int nBasis2,
-                        const int4 *heLoops, const int *heTessOrder, 
+                        const int4 *heLoopsOrder,
                         const float *bezData, const float *wgtData, const float *coeff,
                         float *vDataOut) {
   int heIdx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -221,13 +233,10 @@ __global__ void kTessVtx_Edge(int nVtx, int nHe, int nSub, int nBasis2,
   if (heIdx >= nHe/2 || uIdx >= nSub-1 || dataIdx >= PPM_NVARS)
     return;
 
-  const int4 &he0 = heLoops[-heTessOrder[heIdx]-1];
-  const int4 &he1 = heLoops[he0.w];
-
+  const int4 &he = heLoopsOrder[heIdx];
   float res = 0.0, wgt = 0.0;
-  int nSubVtx = (nSub+1)*(nSub+2)/2;
-  wgt += patchContrib(he0.z*nSubVtx + UV_IDX(uIdx+1,0), he0.x + dataIdx*nVtx, nBasis2, bezData, wgtData, coeff, res);
-  wgt += patchContrib(he1.z*nSubVtx + UV_IDX(nSub-uIdx-1,0), he1.x + dataIdx*nVtx, nBasis2, bezData, wgtData, coeff, res);
+  wgt += patchContrib(he.y*(nSub+1)*(nSub+2)/2 + UV_IDX(uIdx+1,0), he.x + dataIdx*nVtx, nBasis2, bezData, wgtData, coeff, res);
+  wgt += patchContrib(he.w*(nSub+1)*(nSub+2)/2 + UV_IDX(nSub-uIdx-1,0), he.z + dataIdx*nVtx, nBasis2, bezData, wgtData, coeff, res);
 
   vDataOut[PPM_NVARS*(heIdx*(nSub-1) + uIdx) + dataIdx] = res / wgt;
 }
@@ -649,21 +658,26 @@ void PPM::devTessInit() {
   kGetHeTessInfo<<<blkCnt, blkSize>>>(nHe, degMin, dev_heLoops, dev_heFaces, dev_vBndList);
   kGetHeTessInfo<<<blkCnt, blkSize>>>(nHe, degMin, dev_heLoops, dev_heLoops, dev_vBndList);
 
-
-  devAlloc(&dev_heTessIdx, nHe*sizeof(int));
+  int *dev_heTessIdx;
+  cudaMalloc(&dev_heTessIdx, nHe*sizeof(int));
   kGetHeTessIdx<<<blkCnt, blkSize>>>(nHe, dev_heLoops, dev_heTessIdx);
 
   thrust::counting_iterator<int> order_itr(0);
-  thrust::device_vector<int> order_vec(order_itr, order_itr+nHe), order2_vec(order_itr, order_itr+nHe);
+  thrust::device_vector<int> order_vec(order_itr, order_itr+nHe);
   thrust::device_ptr<int> heTessIdx_ptr(dev_heTessIdx);
   thrust::sort_by_key(heTessIdx_ptr, heTessIdx_ptr+nHe, order_vec.begin());
-  thrust::sort_by_key(order_vec.begin(), order_vec.end(), order2_vec.begin());
- 
+
+  devAlloc(&dev_heLoopsOrder, nHe*sizeof(int4)/2);
+  kGetHeTessOrder<<<blkCnt, blkSize>>>(nHe, dev_heLoops, dev_heTessIdx, dev_heLoopsOrder);
+  thrust::copy(order_itr, order_itr+nHe, heTessIdx_ptr);
+  thrust::sort_by_key(order_vec.begin(), order_vec.end(), heTessIdx_ptr);
+  
   blkSize.x = 64;
   blkSize.y = 16;
   blkCnt.x = (nFace + blkSize.x - 1) / blkSize.x;
   blkCnt.y = (nSubVtx + blkSize.y - 1) / blkSize.y;
-  kTessEdges<<<blkCnt, blkSize>>>(nVtx, nHe, nFace, nSub, dev_heLoops, dev_heFaces, order2_vec.data().get(), dev_iuvIdxMap, dev_tessIdx);
+  kTessEdges<<<blkCnt, blkSize>>>(nVtx, nHe, nFace, nSub, dev_heLoops, dev_heFaces, dev_heTessIdx, dev_iuvIdxMap, dev_tessIdx);
+  cudaFree(dev_heTessIdx);
   checkCUDAError("kTessEdges", __LINE__);
   
   if (useVisualize)
@@ -766,12 +780,12 @@ float PPM::update() {
   if (nSub > 1) {
     blkDim.x = 64;
     blkDim.y = 4;
-    blkDim.z = 4;
+    blkDim.z = 2;
     blkCnt.x = (nHe/2 + blkDim.x - 1) / blkDim.x;
     blkCnt.y = (nSub-1 + blkDim.y - 1) / blkDim.y;
     blkCnt.z = (PPM_NVARS + blkDim.z - 1) / blkDim.z;
     kTessVtx_Edge<<<blkCnt, blkDim>>>(nVtx, nHe, nSub, nBasis2,
-      dev_heLoops, dev_heTessIdx, dev_bezPatch, dev_wgtPatch, dev_coeff, dev_tessVtx + PPM_NVARS*nFace*(nSub-1)*(nSub-2)/2);
+      dev_heLoopsOrder,dev_bezPatch, dev_wgtPatch, dev_coeff, dev_tessVtx + PPM_NVARS*nFace*(nSub-1)*(nSub-2)/2);
     checkCUDAError("kTessVtx_Edge", __LINE__);
   }
   
