@@ -406,11 +406,11 @@ __device__ inline int tessGetIdx_Alt(int u, int v, const int4 *heLoops, const in
   int w = nSub-u-v;
   
   if (u == 0 && v == 0)
-    return nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1) + he0.x;
+    return nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1)/2 + he0.x;
   if (w == 0 && v == 0)
-    return nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1) + he1.x;
+    return nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1)/2 + he1.x;
   if (u == 0 && w == 0)
-    return nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1) + he2.x;
+    return nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1)/2 + he2.x;
   
   if (v == 0) {
     if (heIdx1 < nHe/2)
@@ -853,10 +853,10 @@ float PPM::update() {
   }
   
   if (nSub > 1) {
-    blkDim.x = 64;
+    blkDim.x = 128;
     blkDim.y = 4;
-    blkDim.z = 4;
-    blkCnt.x = (nHe/2 + blkDim.x - 1) / blkDim.x;
+    blkDim.z = 2;
+    blkCnt.x = (nHe + blkDim.x - 1) / blkDim.x;
     blkCnt.y = (nSub-1 + blkDim.y - 1) / blkDim.y;
     blkCnt.z = (PPM_NVARS + blkDim.z - 1) / blkDim.z;
     kTessVtx_Edge_Alt<<<blkCnt, blkDim>>>(nVtx, nHe, nSub, nBasis2,
