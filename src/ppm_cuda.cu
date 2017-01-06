@@ -1,11 +1,12 @@
-#include "ppm.hpp"
-#include "bezier.hpp"
-
-#include <thrust/iterator/counting_iterator.h>
 #include <thrust/device_vector.h>
 #include <thrust/device_ptr.h>
-#include <thrust/sort.h>
+#include <thrust/iterator/counting_iterator.h>
 #include <thrust/copy.h>
+#include <thrust/sort.h>
+
+#include "ppm.hpp"
+#include "bezier.hpp"
+#include "util/error.hpp"
 
 // output weights and bezier basis coefficients for tessellated subvertices of a patch
 __global__ void kBezEval(int deg, int nBasis, int nSubVtx, const float2 *uvIdxMap, float *bzOut, float *wgtOut) {
@@ -190,7 +191,7 @@ __global__ void kGetHeTessOrder(int nHe, const int4 *dev_heLoops, const int *dev
   dev_heLoopsOrder[heIdx] = make_int4(he0.x, he0.z, he1.x, he1.z);
 }
 
-__device__ inline float patchContrib(int dIdx, int vIdx, int nBasis2, const float *bez, const float *wgt, const float *coeff, float &res) {
+__device__ float patchContrib(int dIdx, int vIdx, int nBasis2, const float *bez, const float *wgt, const float *coeff, float &res) {
   bez = &bez[dIdx*nBasis2];
   float w = wgt[dIdx];
   for (int i = 0; i < nBasis2; i++)
@@ -336,7 +337,7 @@ __global__ void kUpdateCoeff(int nBasis2, int nSamp, float *V, float sigma, floa
   if (sIdx >= nSamp || bIdx >= nBasis2)
     return;
 
-  float v = sigma * V[bIdx];
+  float v = sigma * V[2*nBasis2 + bIdx];
   int tIdx = bIdx + sIdx*nBasis2;
   coeff[tIdx + 0 * nSamp*nBasis2] += dv[6 * sIdx + 3] * v * dt;
   coeff[tIdx + 1 * nSamp*nBasis2] += dv[6 * sIdx + 4] * v * dt;

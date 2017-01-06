@@ -4,12 +4,14 @@
 #undef min
 #undef max
 
+#include <cstdio>
+
 #include <string>
 #include <sstream>
 #include <stdexcept>
 
 #include <cuda_runtime.h>
-#include <cstdio>
+
 
 // utility to fetch cuda errors and fail
 static void checkCUDAError(const char *msg, int line = -1) {

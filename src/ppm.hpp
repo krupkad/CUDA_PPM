@@ -16,9 +16,6 @@
 #include <cuda_runtime.h>
 #include <cuda_gl_interop.h>
 
-#ifdef __CUDA_ARCH__
-#define GLM_FORCE_CUDA
-#endif
 #include <glm/glm.hpp>
 
 #include "shader.hpp"
@@ -37,6 +34,8 @@ class PPM {
 
     float update();
     void draw(Shader *vShader, Shader *tShader);
+	
+    bool intersect(const glm::vec3 &p0, const glm::vec3 &dir, float2 &uv);
 
     // visualization options
     bool visSkel;
