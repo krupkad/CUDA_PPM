@@ -103,6 +103,8 @@ cuda_add_executable(${CMAKE_PROJECT_NAME}
     "src/shader.hpp"
     "src/shader.cpp"
     "src/main.cpp"
+    "src/gui.hpp"
+    "src/gui.cpp"
 )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
