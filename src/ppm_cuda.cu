@@ -584,8 +584,10 @@ void PPM::devMeshInit() {
   dim3 blkCnt((nHe + 1024 - 1) / 1024);
   dim3 blkDim(1024);
   kGetLoopBoundaries<<<blkCnt, blkDim>>>(nHe, dev_heLoops, dev_vBndList);
+  checkCUDAError("kGetLoopBoundaries", __LINE__);
   kGetHeRootInfo<<<blkCnt, blkDim>>>(nHe, dev_vBndList, dev_heLoops, dev_heLoops);
   kGetHeRootInfo<<<blkCnt, blkDim>>>(nHe, dev_vBndList, dev_heFaces, dev_heLoops);
+  checkCUDAError("kGetRootInfo", __LINE__);
 
   // recalculate normals
   kGetNormals<<<blkCnt, blkDim>>>(nHe, dev_heLoops, dev_vList);
