@@ -1,66 +1,23 @@
 cmake_minimum_required(VERSION 3.2)
 
-project(robo_thesis)
+project(robo_thesis C CXX Fortran)
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
-# Set up include and lib paths
-include_directories(.)
-include_directories("external")
+### Set up local include and precompiled lib paths
 include_directories("external/include")
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(EXTERNAL_LIB_PATH "external/lib/osx")
-elseif(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-    set(EXTERNAL_LIB_PATH "external/lib/linux" "/usr/lib64" "/usr/lib")
 elseif(WIN32)
     set(EXTERNAL_LIB_PATH "external/lib/win")
 endif()
 link_directories(${EXTERNAL_LIB_PATH})
 list(APPEND CMAKE_LIBRARY_PATH "${EXTERNAL_LIB_PATH}")
 
-# Find up and set up core dependency libs
-
-set(GLFW_INCLUDE_DIR "external/include")
-set(GLFW_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
-find_library(GLFW_LIBRARY "glfw3" HINTS "${GLFW_LIBRARY_DIR}")
-
-set(GLEW_INCLUDE_DIR "external/include")
-set(GLEW_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
-add_definitions(-DGLEW_STATIC)
-find_package(GLEW)
-
-find_package(OpenGL)
-
-set(LAPACK_INCLUDE_DIR "external/include")
-set(LAPACK_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
-find_library(LAPACK_LIBRARY "lapack" HINTS "${LAPACK_LIBRARY_DIR}")
-
-set(BLAS_INCLUDE_DIR "external/include")
-set(BLAS_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
-find_library(BLAS_LIBRARY "blas" HINTS "${BLAS_LIBRARY_DIR}")
-
-set(LIBF2C_INCLUDE_DIR "external/include")
-set(LIBF2C_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
-find_library(LIBF2C_LIBRARY "f2c" HINTS "${LIBF2C_LIBRARY_DIR}")
-
-set(NANOGUI_INCLUDE_DIR "external/include")
-set(NANOGUI_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
-find_library(NANOGUI_LIBRARY "nanogui" HINTS "${NANOGUI_LIBRARY_DIR}")
-
-set(CORELIBS
-    "${GLFW_LIBRARY}"
-    "${OPENGL_LIBRARY}"
-    "${GLEW_LIBRARY}"
-    "${LAPACK_LIBRARY}"
-    "${BLAS_LIBRARY}"
-    "${LIBF2C_LIBRARY}"
-    "${NANOGUI_LIBRARY}"
-)
-
-# Enable C++11 for host code
+### Enable C++11 for host code
 set(CMAKE_CXX_STANDARD 11)
 
-# Set up different build configurations
+### Set up different build configurations
 set(CMAKE_CONFIGURATION_TYPES Debug;RelWithDebInfo;Release
     CACHE STRING "Set configuration types" FORCE)
 set(CUDA_PROPAGATE_HOST_FLAGS OFF)
@@ -78,24 +35,37 @@ if (WIN32)
     set(CMAKE_CXX_FLAGS_RELEASE               "/O2 /D NDEBUG")
 endif()
 
-# OS X options
-if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-    list(APPEND CORELIBS "-framework IOKit")
-    list(APPEND CORELIBS "-framework Cocoa")
-    list(APPEND CORELIBS "-framework CoreVideo")
-endif()
+### Detect OpenGL and GLEW
+set(GLEW_INCLUDE_DIR "external/include")
+set(GLEW_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
+add_definitions(-DGLEW_STATIC)
+find_package(GLEW)
+find_package(OpenGL)
 
-# Linux options
-if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-    list(APPEND CMAKE_EXE_LINKER_FLAGS "-lX11 -lXxf86vm -lXrandr -lXi -lXcursor -lXinerama")
-endif()
-
-# CUDA linker options
+### CUDA linker options
 find_package(Threads REQUIRED)
 find_package(CUDA REQUIRED)
 set(CUDA_ATTACH_VS_BUILD_RULE_TO_CUDA_FILE ON)
 set(CUDA_SEPARABLE_COMPILATION ON)
 
+### NanoGui options
+set(NANOGUI_BUILD_EXAMPLE OFF CACHE BOOL " " FORCE)
+set(NANOGUI_BUILD_PYTHON  OFF CACHE BOOL " " FORCE)
+set(NANOGUI_INSTALL       OFF CACHE BOOL " " FORCE)
+set(NANOGUI_BUILD_SHARED  OFF CACHE BOOL " " FORCE)
+add_subdirectory(external/nanogui)
+set_property(TARGET glfw glfw_objects nanogui PROPERTY FOLDER "dependencies")
+add_definitions(${NANOGUI_EXTRA_DEFS})
+include_directories(external/nanogui/include ${NANOGUI_EXTRA_INCS})
+
+### LAPACK options
+set(BUILD_TESTING OFF CACHE BOOL " " FORCE)
+set(BUILD_COMPLEX OFF CACHE BOOL " " FORCE)
+set(BUILD_COMPLEX16 OFF CACHE BOOL " " FORCE)
+add_subdirectory(external/lapack)
+
+
+### main project files
 add_subdirectory(src)
 
 cuda_add_executable(${CMAKE_PROJECT_NAME}
@@ -108,10 +78,11 @@ cuda_add_executable(${CMAKE_PROJECT_NAME}
 )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
-    src
-    ${CORELIBS}
+    ppm
     ${CUDA_CUBLAS_LIBRARIES}
-    )
+    nanogui
+    ${NANOGUI_EXTRA_LIBS}
+)
 
 add_custom_command(
     TARGET ${CMAKE_PROJECT_NAME}
@@ -119,5 +90,5 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/shaders
         ${CMAKE_BINARY_DIR}/shaders
-    )
+)
 

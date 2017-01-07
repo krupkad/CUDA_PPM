@@ -1,8 +1,6 @@
 #ifndef UTIL_LAPACK_H
 #define UTIL_LAPACK_H
 
-#include <f2c.h>
-#include <clapack.h>
 #include <cublas_v2.h>
 
 // MSVC 2013 doesnt support constexpr
@@ -10,6 +8,19 @@
 #define LA_DEFN(a,b) decltype(b) a = b
 #define LA_DECL_PTR(a,b) static decltype(b) * a
 #define LA_DEFN_PTR(a,b) decltype(b) * a = b
+
+extern "C" {
+  typedef long int integer;
+  typedef float real;
+  typedef double doublereal;
+  extern integer sgesdd_(char *jobz, integer *m, integer *n, real *a, 
+    integer *lda, real *s, real *u, integer *ldu, real *vt, integer *ldvt, 
+     real *work, integer *lwork, integer *iwork, integer *info);
+  extern integer dgesdd_(char *jobz, integer *m, integer *n, doublereal *
+    a, integer *lda, doublereal *s, doublereal *u, integer *ldu, 
+    doublereal *vt, integer *ldvt, doublereal *work, integer *lwork, 
+    integer *iwork, integer *info);
+}
 
 template <typename T>
 struct LA {};
