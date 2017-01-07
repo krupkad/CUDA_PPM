@@ -35,7 +35,7 @@ __global__ void kCalcInertia(int nFace, const int4 *heFaces, const float *vtxDat
   float *moiPtr = glm::value_ptr(*moiOut);
   A = detA * A * C * glm::transpose(A);
   for (int i = 0; i < 9; i++)
-	atomicAdd(&moiPtr[i], pA[i]);
+	  atomicAdd(&moiPtr[i], pA[i]);
 }
 
 __global__ void kCalcTessInertia(int nFace, const int *tessIdx, const float *tessVtx, glm::mat3 *moiOut, float *massOut, glm::vec3 *cmOut) {
@@ -92,8 +92,12 @@ void PPM::physInit() {
   cudaMemcpy(&mass, dev_mass, sizeof(float), cudaMemcpyDeviceToHost);
 
   fprintf(stderr, "phys reduce\n");
-  moi -= mass*glm::outerProduct(cm,cm);
-  moi = glm::mat3(moi[0][0] + moi[1][1] + moi[2][2]) - moi;
+  float tr = moi[0][0] + moi[1][1] + moi[2][2];
+  for (int i = 0; i < 3; i++) {
+  for (int j = 0; j < 3; j++) {
+    moi[i][j] = ((i == j) ? tr : 0.0f) - moi[i][j] + mass*cm[i]*cm[j];
+  }}
+
   fprintf(stderr, "phys result: %f (%f %f %f)\n", mass, cm.x, cm.y, cm.z);
   fprintf(stderr, "%f %f %f\n", moi[0][0], moi[1][0], moi[2][0]);
   fprintf(stderr, "%f %f %f\n", moi[0][1], moi[1][1], moi[2][1]);
