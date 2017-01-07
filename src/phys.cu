@@ -201,6 +201,9 @@ __global__ void kMeshIntersect(bool exec, bool biDir,
 }
 
 bool PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir, float2 &uv) {
+  if (!isBuilt)
+    return false;
+
   unsigned int *dev_count;
   cudaMalloc(&dev_count, sizeof(unsigned int));
   cudaMemset(dev_count, 0, sizeof(unsigned int));

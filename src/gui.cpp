@@ -38,7 +38,6 @@ class PpmCanvas : public nanogui::GLCanvas {
     
     virtual bool mouseButtonEvent(const nanogui::Vector2i &pos, int button, bool down, int mods) override {
       if (down) {
-        printf("click %d %d\n", pos[0] - position()[0], pos[1]- position()[1]);
         gui->click(pos[0] - position()[0], pos[1]- position()[1]);
       }
       return true;
@@ -56,7 +55,7 @@ PpmGui::PpmGui(int w, int h) :
     xSize(w), ySize(h),
     leftMousePressed(false), rightMousePressed(false),
     fovy(M_PI / 4), zNear(0.1), zFar(100.0),
-    theta(0), phi(0), zoom(5.0),
+    yAngle(0), xAngle(0), zoom(5.0),
     ppmTime(0.0), fpsTime(0.0), nbFrames(0),
     fName(""), nBasis(4), nSamp(4), nSub(2)
 {
@@ -81,7 +80,6 @@ PpmGui::PpmGui(int w, int h) :
   shader->recompile();
   glClearDepth(1.0);
   glDepthFunc(GL_LEQUAL);
-  updateCamera();
 
   printf("PpmGui: creating UI\n");
   tools = new Widget(window);
@@ -172,6 +170,8 @@ PpmGui::PpmGui(int w, int h) :
  
   printf("PpmGui: performing layout\n");
   performLayout();
+
+  updateCamera();
 }
 
 PpmGui::~PpmGui() {
@@ -190,21 +190,20 @@ void PpmGui::mainLoop() {
 }
 
 void PpmGui::click(int x, int y) {
-  glm::vec3 yAx(0,1,0), xAx(-1,0,0);
   float ratio = float(canvas->width())/canvas->height();
-  float xfov = atan(tan(fovy) * ratio);
-  xAx *= tan(xfov/2);
-  yAx *= tan(fovy/2);
-  
+  float fovx = atan(tan(fovy) * ratio);
+  glm::vec3 dz = glm::normalize(-camPos);
+  glm::vec3 dx = glm::cross(dz, up);
+  glm::vec3 dy = glm::cross(dx, dz);
+
+
   float vx = float(x) / canvas->width();
   float vy = float(y) / canvas->height();
-  glm::vec3 dir = glm::normalize(glm::vec3(0,0,1) + (2.0f*vx-1)*xAx + (1.0f - 2.0f*vy)*yAx);
+
+        printf("click %f %f\n", vx, vy);
+  glm::vec3 dir = glm::normalize(dz + tanf(fovx/2)*(2.0f*vx-1)*dx + tanf(fovy/2)*(1.0f - 2.0f*vy)*dy);
   float2 uv;
-  glm::mat4 model = glm::transpose(glm::eulerAngleYX(phi, theta));
-  glm::vec3 p0(model*glm::vec4(0,0,-zoom,1));
-  dir = glm::vec3(model*glm::vec4(dir,0.0));
-  printf("%f %f %f, %f %f %f\n", p0.x, p0.y, p0.z, dir.x, dir.y, dir.z);
-  ppm->intersect(p0, dir, uv);
+  ppm->intersect(camPos, dir, uv);
 }
 
 void PpmGui::rebuild() {
@@ -217,19 +216,20 @@ void PpmGui::rebuild() {
 }
 
 void PpmGui::updateCamera() {
-  //camPos.x = zoom * sin(phi) * sin(theta);
-  //camPos.y = zoom * cos(theta);
-  //camPos.z = -zoom * cos(phi) * sin(theta);
-  camPos = glm::vec3(0.0f, 0.0f, -zoom);
+  camPos.x = zoom * cos(yAngle) * sin(xAngle);
+  camPos.y = zoom * sin(yAngle);
+  camPos.z = zoom * cos(yAngle) * cos(xAngle);
+
+  right = glm::vec3(sin(xAngle - M_PI/2), 0, cos(xAngle - M_PI/2));
+  up = glm::normalize(glm::cross(right, -camPos));
 
 
-  projection = glm::perspective(fovy, float(xSize) / float(ySize), zNear, zFar);
-  glm::mat4 view = glm::lookAt(camPos, glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
-  glm::mat4 model = glm::eulerAngleYX(phi, theta);
-  projection = projection * view * model;
+  glm::mat4 projection = glm::perspective(fovy, float(canvas->width()) / float(canvas->height()), zNear, zFar);
+  glm::mat4 view = glm::lookAt(camPos, glm::vec3(0,0,0), up);
+  mvp = projection*view;
 
-  shader->setUniform("model", projection);
-  shader->setUniform("invTrModel", glm::inverse(glm::transpose(projection)));
+  shader->setUniform("model", projection*view);
+  shader->setUniform("invTrModel", glm::inverse(glm::transpose(projection*view)));
   shader->setUniform("CamDir", glm::normalize(-camPos));
 }
 
@@ -276,33 +276,33 @@ bool PpmGui::keyboardEvent(int key, int scancode, int action, int modifiers) {
 
   // I,J,K,L = camera controls
   if (key == GLFW_KEY_J && action == GLFW_PRESS) {
-    phi += M_PI / 18.0;
+    xAngle += M_PI / 18.0;
     updateCamera();
     return true;
   }
   if (key == GLFW_KEY_L && action == GLFW_PRESS) {
-    phi -= M_PI / 18.0;
+    xAngle -= M_PI / 18.0;
     updateCamera();
     return true;
   }
   if (key == GLFW_KEY_K && action == GLFW_PRESS) {
-    theta += M_PI / 18.0;
+    yAngle += M_PI / 18.0;
     updateCamera();
     return true;
   }
   if (key == GLFW_KEY_I && action == GLFW_PRESS) {
-    theta -= M_PI / 18.0;
+    yAngle -= M_PI / 18.0;
     updateCamera();
     return true;
   }
   
   if (key == GLFW_KEY_LEFT_BRACKET && action == GLFW_PRESS) {
-    zoom *= 1.1;
+    fovy *= 1.1;
     updateCamera();
     return true;
   }
   if (key == GLFW_KEY_RIGHT_BRACKET && action == GLFW_PRESS) {
-    zoom /= 1.1;
+    fovy /= 1.1;
     updateCamera();
     return true;
   }

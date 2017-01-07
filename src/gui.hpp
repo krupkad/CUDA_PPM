@@ -33,9 +33,9 @@ class PpmGui : public nanogui::Screen {
     float lastX, lastY, xpos, ypos;
     bool leftMousePressed, rightMousePressed;
     float fovy, zNear, zFar;
-    float theta, phi, zoom;
-    glm::vec3 camPos;
-    glm::mat4 projection;
+    float xAngle, yAngle, zoom;
+    glm::vec3 camPos, up, right;
+    glm::mat4 mvp;
 
     float ppmTime, fpsTime;
     int nbFrames;
