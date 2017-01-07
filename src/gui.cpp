@@ -50,7 +50,6 @@ class PpmCanvas : public nanogui::GLCanvas {
     PpmGui* gui;
 };
 
-
 PpmGui::PpmGui(int w, int h) :
     nanogui::Screen(nanogui::Vector2i(w, h), "PPM Demo"),
     ppm(nullptr),
@@ -62,8 +61,6 @@ PpmGui::PpmGui(int w, int h) :
     fName(""), nBasis(4), nSamp(4), nSub(2)
 {
   using namespace nanogui;
-  printf("PpmGui: initializing gui\n");
-  init();
 
   printf("PpmGui: creating window\n");
   Widget *window = new Window(this, "");

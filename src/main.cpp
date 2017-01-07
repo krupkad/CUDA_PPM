@@ -112,6 +112,7 @@ int main(int argc, char *argv[]) {
   }
   
   // initialize graphics
+  nanogui::init();
   PpmGui gui(1200, 800);
   gui.mainLoop();
 
