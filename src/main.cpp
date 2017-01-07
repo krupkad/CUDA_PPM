@@ -102,7 +102,32 @@ int main(int argc, char *argv[]) {
         }
       }
     }
-    
+
+    else if (!strcmp(argv[2], "--ix")) {
+      if (argc != 5) {
+        printf("usage: %s --ix sub count\n", argv[0]);
+        delete ppm;
+        return 0;
+      }
+      
+      nBasis = 4;
+      nSamp = 4;
+      nSub = (1 << atoi(argv[3]));
+      ppm->rebuild(argv[1], nBasis, nSamp, nSub);
+      float dt = 0, t;
+      float2 uv;
+      srand(time(NULL));
+      for (int i = 0; i < atoi(argv[4]); i++) {
+        float phi = 2.0f*float(rand())*M_PI/RAND_MAX, theta = float(rand())*M_PI/RAND_MAX;
+        glm::vec3 p0(cos(phi)*cos(theta), sin(phi), cos(phi)*sin(theta));
+        float t0 = clock();
+        ppm->intersect(p0, -p0, uv);
+        float t1 = clock();
+        dt += (t1-t0)/CLOCKS_PER_SEC;
+      }
+      printf("ix mean = %.3f us\n", 1.0e6f*dt/atoi(argv[4]));
+    }
+
     else {
       printf("usage: %s [--samp, --deg, --sub]\n", argv[0]);
     }

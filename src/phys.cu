@@ -194,7 +194,6 @@ __global__ void kMeshIntersect(bool exec, bool biDir,
       uvOut[oIdx].y = v;
       tOut[oIdx] = t;
     } else {
-      printf("%d %f\n", fSubIdx, t);
       atomicAdd(count, 1);
     }
   }
@@ -207,14 +206,14 @@ bool PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir, float2 &uv) {
   unsigned int *dev_count;
   cudaMalloc(&dev_count, sizeof(unsigned int));
   cudaMemset(dev_count, 0, sizeof(unsigned int));
-  dim3 blkCnt((nFace*nSubFace + 1023) / 1024), blkDim(1024);
+  dim3 blkCnt((nFace*nSubFace + 255) / 256), blkDim(256);
   kMeshIntersect<<<blkCnt,blkDim>>>(false, false, nFace*nSubFace, dev_tessIdx, dev_tessVtx, p0, dir, dev_count, nullptr, nullptr);
   checkCUDAError("kMeshIntersect", __LINE__);
   
   unsigned int count;
   cudaMemcpy(&count, dev_count, sizeof(unsigned int), cudaMemcpyDeviceToHost);
   if (!count) {
-    printf("no ix\n");
+    //printf("no ix\n");
     cudaFree(dev_count);
     return false;
   }
@@ -236,6 +235,6 @@ bool PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir, float2 &uv) {
   int minPos = std::min_element(tOut.begin(), tOut.end()) - tOut.begin();
   uv = uvOut[minPos];
   
-  printf("ix %f %f\n", uv.x, uv.y);
+  //printf("ix %f %f\n", uv.x, uv.y);
   return true;
 }
