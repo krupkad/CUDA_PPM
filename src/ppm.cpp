@@ -292,41 +292,29 @@ void PPM::draw(Shader *vShader, Shader *tShader) {
   
 	if (visSkel) {
 	  glPointSize(1.0f);
-	  glLineWidth(2.0f);
 	  vShader->setUniform("uColor", 0.8f, 0.2f, 0.1f);
     vShader->setUniform("nShade", false);
     glBindVertexArray(vaoBase);
-    //vShader->bindVertexData("Position", vboVtx, SHADER_SSO(3, PPM_NVARS, 0));
-    //vShader->bindVertexData("Normal", vboVtx, SHADER_SSO(3, PPM_NVARS, 3));
-    //vShader->bindVertexData("UV", vboVtx, SHADER_SSO(2, PPM_NVARS, 6));
     vShader->bindIndexData(vboIdx);
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glDrawElements(GL_TRIANGLES, 3 * nFace, GL_UNSIGNED_INT, 0);
-
+    
     glPointSize(3.0f);
-    glLineWidth(1.0f);
     vShader->setUniform("uColor", 0.3, 0.3f, 0.0f);
     vShader->setUniform("nShade", false);
     glBindVertexArray(vaoTess);
-    //vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3, PPM_NVARS, 0));
-    //vShader->bindVertexData("Normal", vboTessVtx, SHADER_SSO(3, PPM_NVARS, 3));
-    //vShader->bindVertexData("UV", vboTessVtx, SHADER_SSO(2, PPM_NVARS, 6));
     vShader->bindIndexData(vboTessIdx);
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glDrawElements(GL_TRIANGLES, 3 * nFace*nSubFace, GL_UNSIGNED_INT, 0);
     glDrawElements(GL_POINTS, 3 * nFace*nSubFace, GL_UNSIGNED_INT, 0);
-	}
+  }
 
   if (visFill) {
     glPointSize(3.0f);
-    glLineWidth(1.0f);
     vShader->setUniform("uColor", 0.4f, 0.4f, 0.4f);
     vShader->setUniform("nShade", true);
     vShader->setUniform("dbgNormals", visDbgNormals);
     glBindVertexArray(vaoTess);
-    //vShader->bindVertexData("Position", vboTessVtx, SHADER_SSO(3, PPM_NVARS, 0));
-    //vShader->bindVertexData("Normal", vboTessVtx, SHADER_SSO(3, PPM_NVARS, 3));
-    //vShader->bindVertexData("UV", vboTessVtx, SHADER_SSO(2, PPM_NVARS, 6));
     vShader->bindIndexData(vboTessIdx);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glDrawElements(GL_TRIANGLES, 3 * nFace*nSubFace, GL_UNSIGNED_INT, 0);
