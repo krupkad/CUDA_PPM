@@ -16,11 +16,12 @@ void main() {
     if (dbgNormals)
       color = abs(vNormal);
     else {
-      vec3 lDir = -normalize(vec3(1,-4,4));
+      vec3 lPos = vec3(2,-2,-1);
+      vec3 lDir = normalize(lPos-vPosition);
       vec3 hDir = normalize(CamDir + lDir);
       float hDot = max(dot(hDir, vNormal),0.0);
       float spec = pow(hDot, 5);
-      color = 0.3 + 1.0*vec3(spec)*uColor + clamp(dot(vNormal, lDir),0,1)*uColor;
+      color = 0.3 + 1.0*vec3(spec)*uColor + 5.0*clamp(dot(vNormal, lDir)/dot(lPos-vPosition,lPos-vPosition),0,1)*uColor;
 	  }
   }
 	else
