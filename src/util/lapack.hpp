@@ -8,7 +8,7 @@
 #define LA_DEFN(a,b) decltype(b) a = b
 #define LA_DECL_PTR(a,b) static decltype(b) * a
 #define LA_DEFN_PTR(a,b) decltype(b) * a = b
-
+namespace {
 extern "C" {
   typedef long int integer;
   typedef float real;
@@ -73,4 +73,5 @@ LA_DEFN_PTR(LA<double>::ger, cublasDger);
 LA_DEFN(LA<double>::zero, 0.0);
 LA_DEFN(LA<double>::one, 1.0);
 
+}
 #endif /* UTIL_LAPACK_H */
