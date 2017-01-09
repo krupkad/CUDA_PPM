@@ -140,6 +140,31 @@ PpmGui::PpmGui(int w, int h) :
   });
   c5->setEditable(true);
   c5->setSpinnable(true);
+   
+  new Label(tools, "kSelf");
+  FloatBox<float> *f1 = new FloatBox<float>(tools, ppm->kSelf);
+  new Label(tools, "kDamp");
+  FloatBox<float> *f2 = new FloatBox<float>(tools, ppm->kDamp);
+  new Label(tools, "kNbr");
+  FloatBox<float> *f3 = new FloatBox<float>(tools, ppm->kNbr);
+  
+  f1->setMinValue(0.0f);
+  f1->setCallback([this](float value) { 
+    ppm->kSelf = value;
+  });
+  f1->setEditable(true);
+  
+  f2->setMinValue(0.0f);
+  f2->setCallback([this](float value) { 
+    ppm->kDamp = value;
+  });
+  f2->setEditable(true);
+   
+  f3->setMinValue(0.0f);
+  f3->setCallback([this](float value) { 
+    ppm->kNbr = value;
+  });
+  f3->setEditable(true);
   
   new Label(tools, "PPM time (ms)");
   ppmTimeBox = new FloatBox<float>(tools);

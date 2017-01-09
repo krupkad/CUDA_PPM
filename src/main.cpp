@@ -114,6 +114,8 @@ int main(int argc, char *argv[]) {
       nSamp = 4;
       nSub = (1 << atoi(argv[3]));
       ppm->rebuild(argv[1], nBasis, nSamp, nSub);
+      ppm->update();
+
       float dt = 0, t;
       float2 uv;
       srand(time(NULL));

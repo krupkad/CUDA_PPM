@@ -24,7 +24,10 @@ PPM::PPM(bool glVis) :
   visSkel(true),
   visDbgNormals(true),
   inFile(""),
-  isBuilt(false)
+  isBuilt(false),
+  kSelf(0.1f),
+  kDamp(0.5f),
+  kNbr(0.1f)
 {}
 
 PPM::~PPM() {

@@ -331,55 +331,6 @@ __global__ void kGetNormals(int nHe, const int4 *heLoops, float *vData) {
   atomicAdd(&vData[PPM_NVARS * he0.x + 5], dx0[0] * dx1[1] - dx0[1] * dx1[0]);
 }
 
-__global__ void kUpdateCoeff(int nBasis2, int nSamp, float *V, float sigma, float *dv, float *coeff, float dt) {
-  int bIdx = threadIdx.x + blockIdx.x * blockDim.x;
-  int sIdx = threadIdx.y + blockIdx.y * blockDim.y;
-  if (sIdx >= nSamp || bIdx >= nBasis2)
-    return;
-
-  float v = sigma * V[2*nBasis2 + bIdx];
-  int tIdx = bIdx + sIdx*nBasis2;
-  coeff[tIdx + 0 * nSamp*nBasis2] += dv[6 * sIdx + 3] * v * dt;
-  coeff[tIdx + 1 * nSamp*nBasis2] += dv[6 * sIdx + 4] * v * dt;
-  coeff[tIdx + 2 * nSamp*nBasis2] += dv[6 * sIdx + 5] * v * dt;
-  dv[6 * sIdx + 0] += dv[6 * sIdx + 3] * dt;
-  dv[6 * sIdx + 1] += dv[6 * sIdx + 4] * dt;
-  dv[6 * sIdx + 2] += dv[6 * sIdx + 5] * dt;
-  dv[6 * sIdx + 3] -= 0.5f*dv[6 * sIdx + 0]*dt;
-  dv[6 * sIdx + 4] -= 0.5f*dv[6 * sIdx + 1] * dt;
-  dv[6 * sIdx + 5] -= 0.5f*dv[6 * sIdx + 2] * dt;
-}
-
-__global__ void kUpdateCoeffSM(int nBasis2, int nSamp, float *V, float sigma, float *dv, float *coeff, float dt) {
-  int bIdx = threadIdx.x + blockIdx.x * blockDim.x;
-  int sIdx = threadIdx.y + blockIdx.y * blockDim.y;
-  if (sIdx >= nSamp || bIdx >= nBasis2)
-    return;
-
-  extern __shared__ float ucSM[];
-  float *dvSM = &ucSM[6 * threadIdx.y];
-  for (int i = threadIdx.x; i < 6; i += blockDim.x)
-    dvSM[i] = dv[6 * sIdx + i];
-  __syncthreads();
-
-
-  float v = sigma * V[bIdx];
-  int tIdx = bIdx + sIdx*nBasis2;
-  coeff[tIdx + 0 * nSamp*nBasis2] += dvSM[0] * v * dt;
-  coeff[tIdx + 1 * nSamp*nBasis2] += dvSM[1] * v * dt;
-  coeff[tIdx + 2 * nSamp*nBasis2] += dvSM[2] * v * dt;
-  dvSM[0] += dvSM[3] * dt;
-  dvSM[1] += dvSM[4] * dt;
-  dvSM[2] += dvSM[5] * dt;
-  dvSM[3] -= 0.5f*dvSM[0] * dt;
-  dvSM[4] -= 0.5f*dvSM[1] * dt;
-  dvSM[5] -= 0.5f*dvSM[2] * dt;
-
-  for (int i = threadIdx.x; i < 6; i += blockDim.x)
-    dv[6 * sIdx + i] = dvSM[i];
-  __syncthreads();
-}
-
 __device__ inline int tessGetIdx(int u, int v, const int4 *heLoops, const int4 *heFaces,
                                 const int *heTessOrder,
                                 int fIdx, int nVtx, int nHe, int nFace, int nSub) {
@@ -551,17 +502,20 @@ void PPM::devCoeffInit() {
   genCoeff();
 
   // initialize the deformation vector
-  float *dv = new float[6 * nVtx];
+  float *dv = new float[9 * nVtx];
   for (int i = 0; i < nVtx; i++) {
-    dv[6 * i + 0] = 0.0f;
-    dv[6 * i + 1] = 0.0f;
-    dv[6 * i + 2] = 0.0f;
-    dv[6 * i + 3] = 0.1 * (float(rand()) / RAND_MAX - 0.5f);
-    dv[6 * i + 4] = 0.1 * (float(rand()) / RAND_MAX - 0.5f);
-    dv[6 * i + 5] = 0.1 * (float(rand()) / RAND_MAX - 0.5f);
+    dv[9 * i + 0] = 0.0f;
+    dv[9 * i + 1] = 0.0f;
+    dv[9 * i + 2] = 0.0f;
+    dv[9 * i + 3] = 0.1 * (float(rand()) / RAND_MAX - 0.5f);
+    dv[9 * i + 4] = 0.1 * (float(rand()) / RAND_MAX - 0.5f);
+    dv[9 * i + 5] = 0.1 * (float(rand()) / RAND_MAX - 0.5f);
+    dv[9 * i + 6] = 0.0f;
+    dv[9 * i + 7] = 0.0f;
+    dv[9 * i + 8] = 0.0f;
   }
-  devAlloc(&dev_dv, 6 * nVtx*sizeof(float));
-  cudaMemcpy(dev_dv, dv, 6 * nVtx*sizeof(float), cudaMemcpyHostToDevice);
+  devAlloc(&dev_dv, 9 * nVtx*sizeof(float));
+  cudaMemcpy(dev_dv, dv, 9 * nVtx*sizeof(float), cudaMemcpyHostToDevice);
   delete dv;
 }
 
@@ -698,14 +652,6 @@ void PPM::devInit() {
   devPatchInit();
   devCoeffInit();
   devTessInit();
-}
-
-void PPM::updateCoeff() {
-  dim3 blkDim(16,64), blkCnt;
-  blkCnt.x = (nBasis2 + blkDim.x - 1) / blkDim.x;
-  blkCnt.y = (nVtx + blkDim.y - 1) / blkDim.y;
-  kUpdateCoeff<<<blkCnt,blkDim>>>(nBasis2, nVtx, bezier->dev_V, 1.0, dev_dv, dev_coeff, 0.1f);
-  checkCUDAError("kUpdateCoeff", __LINE__);
 }
 
 float PPM::update() {

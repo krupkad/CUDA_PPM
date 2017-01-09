@@ -53,6 +53,9 @@ class PPM {
     int nVtx, nFace, nHe;
     int nSub, nSubFace, nSubVtx;
     int degMin, degMax, nDeg;
+
+    // physics attributes
+    float kSelf, kNbr, kDamp;
   private:
     // PPM properties
     int nBasis, nGrid, nBasis2, nGrid2;

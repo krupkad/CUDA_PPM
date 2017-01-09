@@ -1,4 +1,5 @@
 #include "ppm.hpp"
+#include "bezier.hpp"
 #include "util/error.hpp"
 
 #include <glm/gtc/type_ptr.hpp>
@@ -145,7 +146,7 @@ void PPM::physTess() {
 __global__ void kMeshIntersect(bool exec, bool biDir,
                                 int nSubFace, const int *vTessIdx, const float *vTessData,
                                 const glm::vec3 p0, const glm::vec3 dir,
-                                unsigned int *count, float2 *uvOut, float *tOut) {
+                                unsigned int *count, float2 *uvOut, int *idxOut, float *tOut) {
   int fSubIdx = threadIdx.x + blockIdx.x * blockDim.x;
   if (fSubIdx >= nSubFace)
     return;
@@ -193,10 +194,113 @@ __global__ void kMeshIntersect(bool exec, bool biDir,
       uvOut[oIdx].x = u;
       uvOut[oIdx].y = v;
       tOut[oIdx] = t;
+      idxOut[oIdx] = fSubIdx;
     } else {
       atomicAdd(count, 1);
     }
   }
+}
+
+__global__ void kUpdateCoeff(int nBasis2, int nVtx, const float *V, float sigma, const float *dv, float *coeff, float dt) {
+  int bIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  int vIdx = threadIdx.y + blockIdx.y * blockDim.y;
+  if (vIdx >= nVtx || bIdx >= nBasis2)
+    return;
+
+  dv = &dv[9*vIdx];
+
+  float v = sigma * V[0*nBasis2 + bIdx];
+  int tIdx = bIdx + vIdx*nBasis2;
+  coeff[tIdx + 0 * nVtx*nBasis2] += dv[3] * v * dt;
+  coeff[tIdx + 1 * nVtx*nBasis2] += dv[4] * v * dt;
+  coeff[tIdx + 2 * nVtx*nBasis2] += dv[5] * v * dt;
+}
+
+__global__ void kPhysVerlet1(int nVtx, float *dv, float kSelf, float kDamp, float dt) {
+  int vIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  if (vIdx >= nVtx)
+    return;
+
+  dv = &dv[9*vIdx];
+  dv[3] += 0.5f*dv[6]*dt;
+  dv[4] += 0.5f*dv[7]*dt;
+  dv[5] += 0.5f*dv[8]*dt;
+  dv[0] += dv[3]*dt;
+  dv[1] += dv[4]*dt;
+  dv[2] += dv[5]*dt;
+
+  dv[6] = -kSelf*dv[0] - kDamp*dv[3];
+  dv[7] = -kSelf*dv[1] - kDamp*dv[4];
+  dv[8] = -kSelf*dv[2] - kDamp*dv[5];
+}
+
+__global__ void kPhysNeighbor(int nHe, const int4 *heLoops, float kNbr, float *dv) {
+  int heIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  if (heIdx >= nHe)
+    return;
+
+  const int4 &he = heLoops[heIdx];
+  atomicAdd(&dv[9*he.x + 6], kNbr * (dv[9*he.y + 0] - dv[9*he.x + 0])); 
+  atomicAdd(&dv[9*he.x + 7], kNbr * (dv[9*he.y + 1] - dv[9*he.x + 1]));
+  atomicAdd(&dv[9*he.x + 8], kNbr * (dv[9*he.y + 2] - dv[9*he.x + 2]));
+}
+
+__global__ void kPhysVerlet2(int nVtx, float *dv, float dt) {
+  int vIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  if (vIdx >= nVtx)
+    return;
+
+  dv = &dv[9*vIdx];
+  dv[3] += 0.5f*dv[6]*dt;
+  dv[4] += 0.5f*dv[7]*dt;
+  dv[5] += 0.5f*dv[8]*dt;
+}
+
+
+/*
+  
+  if (uv.x > 0 && uv.y > 0) {
+    fSubIdx = fIdx*nSubFace + UV_IDX(uv.x - 1, uv.y - 1) + nSubVtx - nSub - 1;
+    idxOut[3*fSubIdx + 0] = tessGetIdx(uv.x, uv.y, heLoops, heFaces,  heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
+    idxOut[3*fSubIdx + 1] = tessGetIdx(uv.x-1, uv.y, heLoops, heFaces,  heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
+    idxOut[3*fSubIdx + 2] = tessGetIdx(uv.x, uv.y-1, heLoops, heFaces,  heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
+  }
+
+  if (uv.x+uv.y < nSub) {
+    fSubIdx = fIdx*nSubFace + UV_IDX(uv.x, uv.y);
+    idxOut[3*fSubIdx + 0] = tessGetIdx(uv.x, uv.y, heLoops, heFaces,  heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
+    idxOut[3*fSubIdx + 1] = tessGetIdx(uv.x+1, uv.y, heLoops, heFaces,  heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
+    idxOut[3*fSubIdx + 2] = tessGetIdx(uv.x, uv.y + 1, heLoops, heFaces, heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
+  }
+*/
+__global__ void kPhysClick(int nSub, int nSubVtx, int fSubIdx, const float2 *uvIdx, const int4 *heFaces, const float *vData, float *dv) {
+  int fIdx = fSubIdx / (nSub*nSub);
+  int uvOff = fSubIdx - fIdx*nSub*nSub;
+
+  float2 uv;
+  if (uvOff <= nSubVtx - nSub - 1) {
+    uv = uvIdx[uvOff - (nSubVtx - nSub - 1)];
+    uv.x -= 1.0f/nSub;
+    uv.y -= 1.0f/nSub;
+  } else {
+    uv = uvIdx[uvOff];
+  }
+  float w = 1.0f - uv.x - uv.y;
+
+  const int4 &he0 = heFaces[3*fIdx], &he1 = heFaces[3*fIdx+1], &he2 = heFaces[3*fIdx+2];
+  const float *v0 = &vData[PPM_NVARS*he0.x], *v1 = &vData[PPM_NVARS*he1.x], *v2 = &vData[PPM_NVARS*he2.x];
+  float *dv0 = &dv[9*he0.x], *dv1 = &dv[9*he1.x], *dv2 = &dv[9*he2.x];
+
+  float dx = 0.4f;
+  dv0[3] += w * dx * v0[3];
+  dv0[4] += w * dx * v0[4];
+  dv0[5] += w * dx * v0[5];
+  dv1[3] += uv.x * dx * v1[3];
+  dv1[4] += uv.x * dx * v1[4];
+  dv1[5] += uv.x * dx * v1[5];
+  dv2[3] += uv.y * dx * v2[3];
+  dv2[4] += uv.y * dx * v2[4];
+  dv2[5] += uv.y * dx * v2[5];
 }
 
 bool PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir, float2 &uv) {
@@ -207,7 +311,7 @@ bool PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir, float2 &uv) {
   cudaMalloc(&dev_count, sizeof(unsigned int));
   cudaMemset(dev_count, 0, sizeof(unsigned int));
   dim3 blkCnt((nFace*nSubFace + 255) / 256), blkDim(256);
-  kMeshIntersect<<<blkCnt,blkDim>>>(false, false, nFace*nSubFace, dev_tessIdx, dev_tessVtx, p0, dir, dev_count, nullptr, nullptr);
+  kMeshIntersect<<<blkCnt,blkDim>>>(false, false, nFace*nSubFace, dev_tessIdx, dev_tessVtx, p0, dir, dev_count, nullptr, nullptr, nullptr);
   checkCUDAError("kMeshIntersect", __LINE__);
   
   unsigned int count;
@@ -220,21 +324,55 @@ bool PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir, float2 &uv) {
   
   float2 *dev_uvOut;
   float *dev_tOut;
+  int *dev_idxOut;
   cudaMalloc(&dev_uvOut, count*sizeof(float2));
   cudaMalloc(&dev_tOut, count*sizeof(float));
-  kMeshIntersect<<<blkCnt,blkDim>>>(true, false, nFace*nSubFace, dev_tessIdx, dev_tessVtx, p0, dir, dev_count, dev_uvOut, dev_tOut);
+  cudaMalloc(&dev_idxOut, count*sizeof(int));
+  kMeshIntersect<<<blkCnt,blkDim>>>(true, false, nFace*nSubFace, dev_tessIdx, dev_tessVtx, p0, dir, dev_count, dev_uvOut, dev_idxOut, dev_tOut);
   checkCUDAError("kMeshIntersect", __LINE__);
   
   std::vector<float2> uvOut(count);
   std::vector<float> tOut(count);
+  std::vector<int> idxOut(count);
   cudaMemcpy(&uvOut[0], dev_uvOut, count*sizeof(float2), cudaMemcpyDeviceToHost);
-  cudaMemcpy(&tOut[0], dev_uvOut, count*sizeof(float), cudaMemcpyDeviceToHost);
-  cudaFree(dev_uvOut);
-  cudaFree(dev_tOut);
+  cudaMemcpy(&tOut[0], dev_tOut, count*sizeof(float), cudaMemcpyDeviceToHost);
+  cudaMemcpy(&idxOut[0], dev_idxOut, count*sizeof(int), cudaMemcpyDeviceToHost);
   
   int minPos = std::min_element(tOut.begin(), tOut.end()) - tOut.begin();
   uv = uvOut[minPos];
+  int idx = idxOut[minPos];
+
+  kPhysClick<<<1,1>>>(nSub, nSubVtx, idx, dev_uvIdxMap, dev_heFaces, dev_vList, dev_dv);
   
   //printf("ix %f %f\n", uv.x, uv.y);
+  cudaFree(dev_uvOut);
+  cudaFree(dev_tOut);
+  cudaFree(dev_idxOut);
   return true;
 }
+
+void PPM::updateCoeff() {
+  dim3 blkDim(256), blkCnt;
+  blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
+  kPhysVerlet1<<<blkCnt,blkDim>>>(nVtx, dev_dv, kSelf, kDamp, 0.1f);
+  checkCUDAError("kPhysVerlet1", __LINE__); 
+  
+  blkDim.x = 16;
+  blkDim.y = 64;
+  blkCnt.x = (nBasis2 + blkDim.x - 1) / blkDim.x;
+  blkCnt.y = (nVtx + blkDim.y - 1) / blkDim.y;
+  kUpdateCoeff<<<blkCnt,blkDim>>>(nBasis2, nVtx, bezier->dev_V, 1.0, dev_dv, dev_coeff, 0.1f);
+  checkCUDAError("kUpdateCoeff", __LINE__);
+ 
+  blkDim.x = 256;
+  blkDim.y = 1;
+  blkCnt.x = (nHe + blkDim.x - 1) / blkDim.x;
+  blkCnt.y = 1;
+  kPhysNeighbor<<<blkCnt,blkDim>>>(nHe, dev_heLoops, kNbr, dev_dv);
+  checkCUDAError("kPhysNeighbor", __LINE__);
+
+  blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
+  kPhysVerlet2<<<blkCnt,blkDim>>>(nVtx, dev_dv, 0.1f);
+  checkCUDAError("kPhysVerlet2", __LINE__); 
+}
+
