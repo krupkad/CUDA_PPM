@@ -245,6 +245,33 @@ __global__ void kPhysNeighbor(int nHe, const int4 *heLoops, float kNbr, float *d
   atomicAdd(&dv[9*he.x + 8], kNbr * (dv[9*he.y + 2] - dv[9*he.x + 2]));
 }
 
+__global__ void kPhysNeighborAlt(int nVtx, const int4 *heLoops, const int2 *vBndList, float kNbr, float *dv) {
+  int vIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  if (vIdx >= nVtx)
+    return;
+
+  extern __shared__ float physSM[];
+  float *vSM = &physSM[6 * threadIdx.x];
+  vSM[0] = dv[9*vIdx + 0];
+  vSM[1] = dv[9*vIdx + 1];
+  vSM[2] = dv[9*vIdx + 2];
+  vSM[3] = 0.0f;
+  vSM[4] = 0.0f;
+  vSM[5] = 0.0f;
+
+  const int2 &bnd = vBndList[vIdx];
+  for (int i = bnd.x; i < bnd.y; i++) {
+    int tgt = heLoops[i].y;
+    vSM[3] += kNbr * (dv[9*tgt + 0] - vSM[0]);
+    vSM[4] += kNbr * (dv[9*tgt + 1] - vSM[1]);
+    vSM[5] += kNbr * (dv[9*tgt + 2] - vSM[2]);
+  }
+
+  dv[9*vIdx + 6] += vSM[3];
+  dv[9*vIdx + 7] += vSM[4];
+  dv[9*vIdx + 8] += vSM[5];
+}
+
 __global__ void kPhysVerlet2(int nVtx, float *dv, float dt) {
   int vIdx = threadIdx.x + blockIdx.x * blockDim.x;
   if (vIdx >= nVtx)
@@ -278,10 +305,10 @@ __global__ void kPhysClick(int nSub, int nSubVtx, int fSubIdx, const float2 *uvI
   int uvOff = fSubIdx - fIdx*nSub*nSub;
 
   float2 uv;
-  if (uvOff <= nSubVtx - nSub - 1) {
+  if (uvOff >= nSubVtx - nSub - 1) {
     uv = uvIdx[uvOff - (nSubVtx - nSub - 1)];
-    uv.x -= 1.0f/nSub;
-    uv.y -= 1.0f/nSub;
+    uv.x += 1.0f/nSub;
+    uv.y += 1.0f/nSub;
   } else {
     uv = uvIdx[uvOff];
   }
@@ -291,16 +318,16 @@ __global__ void kPhysClick(int nSub, int nSubVtx, int fSubIdx, const float2 *uvI
   const float *v0 = &vData[PPM_NVARS*he0.x], *v1 = &vData[PPM_NVARS*he1.x], *v2 = &vData[PPM_NVARS*he2.x];
   float *dv0 = &dv[9*he0.x], *dv1 = &dv[9*he1.x], *dv2 = &dv[9*he2.x];
 
-  float dx = 0.4f;
-  dv0[3] += w * dx * v0[3];
-  dv0[4] += w * dx * v0[4];
-  dv0[5] += w * dx * v0[5];
-  dv1[3] += uv.x * dx * v1[3];
-  dv1[4] += uv.x * dx * v1[4];
-  dv1[5] += uv.x * dx * v1[5];
-  dv2[3] += uv.y * dx * v2[3];
-  dv2[4] += uv.y * dx * v2[4];
-  dv2[5] += uv.y * dx * v2[5];
+  float dx = 2.5f;
+  dv0[6] += w * dx * v0[3];
+  dv0[7] += w * dx * v0[4];
+  dv0[8] += w * dx * v0[5];
+  dv1[6] += uv.x * dx * v1[3];
+  dv1[7] += uv.x * dx * v1[4];
+  dv1[8] += uv.x * dx * v1[5];
+  dv2[6] += uv.y * dx * v2[3];
+  dv2[7] += uv.y * dx * v2[4];
+  dv2[8] += uv.y * dx * v2[5];
 }
 
 bool PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir, float2 &uv) {
@@ -363,14 +390,16 @@ void PPM::updateCoeff() {
   blkCnt.y = (nVtx + blkDim.y - 1) / blkDim.y;
   kUpdateCoeff<<<blkCnt,blkDim>>>(nBasis2, nVtx, bezier->dev_V, 1.0, dev_dv, dev_coeff, 0.1f);
   checkCUDAError("kUpdateCoeff", __LINE__);
- 
-  blkDim.x = 256;
-  blkDim.y = 1;
-  blkCnt.x = (nHe + blkDim.x - 1) / blkDim.x;
-  blkCnt.y = 1;
-  kPhysNeighbor<<<blkCnt,blkDim>>>(nHe, dev_heLoops, kNbr, dev_dv);
-  checkCUDAError("kPhysNeighbor", __LINE__);
 
+  blkDim.x = 128;
+  blkDim.y = 1;
+  blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
+  blkCnt.y = 1;
+  int nSM = 6*blkDim.x*sizeof(float);
+  kPhysNeighborAlt<<<blkCnt,blkDim,nSM>>>(nVtx, dev_heLoops, dev_vBndList, kNbr, dev_dv);
+  //kPhysNeighbor<<<blkCnt,blkDim>>>(nHe, dev_heLoops, kNbr, dev_dv);
+  checkCUDAError("kPhysNeighbor", __LINE__);
+  
   blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
   kPhysVerlet2<<<blkCnt,blkDim>>>(nVtx, dev_dv, 0.1f);
   checkCUDAError("kPhysVerlet2", __LINE__); 
