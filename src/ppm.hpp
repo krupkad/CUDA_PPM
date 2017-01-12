@@ -35,7 +35,7 @@ class PPM {
     float update();
     void draw(Shader *vShader, Shader *tShader);
 	
-    bool intersect(const glm::vec3 &p0, const glm::vec3 &dir, float2 &uv);
+    bool intersect(const glm::vec3 &p0, const glm::vec3 &dir, float fClick);
 
     // visualization options
     bool visSkel;

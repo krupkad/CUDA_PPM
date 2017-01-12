@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) {
         float phi = 2.0f*float(rand())*M_PI/RAND_MAX, theta = float(rand())*M_PI/RAND_MAX;
         glm::vec3 p0(cos(phi)*cos(theta), sin(phi), cos(phi)*sin(theta));
         float t0 = clock();
-        ppm->intersect(p0, -p0, uv);
+        ppm->intersect(p0, -p0, 1.0);
         float t1 = clock();
         dt += (t1-t0)/CLOCKS_PER_SEC;
       }

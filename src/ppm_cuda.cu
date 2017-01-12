@@ -648,10 +648,6 @@ void PPM::devTessInit() {
 
 // allocate and initialize PPM data
 void PPM::devInit() {
-  devMeshInit();
-  devPatchInit();
-  devCoeffInit();
-  devTessInit();
 }
 
 float PPM::update() {

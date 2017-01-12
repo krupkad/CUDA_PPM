@@ -39,7 +39,9 @@ class PpmGui : public nanogui::Screen {
 
     float ppmTime, fpsTime;
     int nbFrames;
-    nanogui::FloatBox<float> *ppmTimeBox, *fpsTimeBox;
+    nanogui::FloatBox<float> *ppmTimeBox;
+
+    float fClick;
 
     Shader *shader;
 };

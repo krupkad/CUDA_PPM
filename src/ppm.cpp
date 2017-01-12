@@ -63,21 +63,30 @@ void PPM::rebuild(const char *fName, int nBasis, int nGrid, int nSub) {
   // check CUDA features
   cudaProbe();
 
+  // initialize device-side mesh data
+  devMeshInit();
+
+  // calculate mesh physics properties
+  physInit();
+
+  // initialize visualization data
   if (useVisualize) {
     visInit();
     fprintf(stderr, "vis done\n");
   }
-
+ 
+  // calculate PPM data 
   this->nBasis = nBasis;
   this->nGrid = nGrid;
   this->nBasis2 = nBasis*nBasis;
   this->nGrid2 = nGrid*nGrid;
-  devInit();
+  devPatchInit();
+  devCoeffInit();
+
+  // tesselate mesh
+  devTessInit();
+
   fprintf(stderr, "dev done\n");
-  
-  // physics
-  physInit();
-  
   isBuilt = true;
 }
 

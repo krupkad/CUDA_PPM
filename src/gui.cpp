@@ -57,7 +57,8 @@ PpmGui::PpmGui(int w, int h) :
     fovy(M_PI / 4), zNear(0.1), zFar(100.0),
     yAngle(0), xAngle(0), zoom(5.0),
     ppmTime(0.0), fpsTime(0.0), nbFrames(0),
-    fName(""), nBasis(4), nSamp(4), nSub(2)
+    fName(""), nBasis(4), nSamp(4), nSub(2),
+    fClick(5.0)
 {
   using namespace nanogui;
 
@@ -96,17 +97,7 @@ PpmGui::PpmGui(int w, int h) :
   CheckBox *chkFill = new CheckBox(tools, "Show Surface");
   chkFill->setChecked(ppm->visFill);
   chkFill->setCallback([this](bool value) { ppm->visFill = value; });
-  
-  CheckBox *chkSM = new CheckBox(tools, "Use SM");
-  chkSM->setChecked(ppm->useTessSM);
-  chkSM->setCallback([this](bool value) { ppm->useTessSM = value; });
-
-  if (ppm->canUseTexObjs) {
-    CheckBox *chkSampTex = new CheckBox(tools, "Use Tex Samp");
-    chkSampTex->setChecked(ppm->useSampTex);
-    chkSampTex->setCallback([this](bool value) { ppm->useSampTex = value; });
-  }
-  
+ 
   new Label(tools, "nBasis");
   IntBox<int> *c3 = new IntBox<int>(tools, nBasis);
   new Label(tools, "nSamp");
@@ -147,7 +138,10 @@ PpmGui::PpmGui(int w, int h) :
   FloatBox<float> *f2 = new FloatBox<float>(tools, ppm->kDamp);
   new Label(tools, "kNbr");
   FloatBox<float> *f3 = new FloatBox<float>(tools, ppm->kNbr);
+  new Label(tools, "Click Force");
+  FloatBox<float> *f4 = new FloatBox<float>(tools, fClick);
   
+
   f1->setMinValue(0.0f);
   f1->setCallback([this](float value) { 
     ppm->kSelf = value;
@@ -166,10 +160,13 @@ PpmGui::PpmGui(int w, int h) :
   });
   f3->setEditable(true);
   
+  f4->setCallback([this](float value) { 
+    fClick = value;
+  });
+  f4->setEditable(true);
+  
   new Label(tools, "PPM time (ms)");
   ppmTimeBox = new FloatBox<float>(tools);
-  new Label(tools, "Frame Rate (fps)");
-  fpsTimeBox = new FloatBox<float>(tools);
   
   new Label(tools, "Base faces");
   ppmBaseFaceBox = new IntBox<int>(tools);
@@ -191,7 +188,6 @@ PpmGui::PpmGui(int w, int h) :
   canvas->setBackgroundColor({ 0, 0, 0, 255 });
   canvas->setDrawBorder(false);
   canvas->setSize({ w - tools->width(), h });
-  
  
   printf("PpmGui: performing layout\n");
   performLayout();
@@ -225,10 +221,8 @@ void PpmGui::click(int x, int y) {
   float vx = float(x) / canvas->width();
   float vy = float(y) / canvas->height();
 
-        printf("click %f %f\n", vx, vy);
   glm::vec3 dir = glm::normalize(dz + tanf(fovx/2)*(2.0f*vx-1)*dx + tanf(fovy/2)*(1.0f - 2.0f*vy)*dy);
-  float2 uv;
-  ppm->intersect(camPos, dir, uv);
+  ppm->intersect(camPos, dir, fClick);
 }
 
 void PpmGui::rebuild() {
@@ -281,7 +275,6 @@ void PpmGui::draw(NVGcontext *ctx) {
   nbFrames++;
   if (currentTime - fpsTime >= 1.0) {
     ppmTimeBox->setValue(ppmTime / nbFrames);
-    fpsTimeBox->setValue(float(nbFrames) / (currentTime - fpsTime));
     ppmTessRateBox->setValue(1000.0f * nbFrames * ppm->nFace * ppm->nSubFace / ppmTime);
     nbFrames = 0;
     ppmTime = 0.0f;
@@ -322,12 +315,12 @@ bool PpmGui::keyboardEvent(int key, int scancode, int action, int modifiers) {
   }
   
   if (key == GLFW_KEY_LEFT_BRACKET && action == GLFW_PRESS) {
-    fovy *= 1.1;
+    zoom *= 1.1;
     updateCamera();
     return true;
   }
   if (key == GLFW_KEY_RIGHT_BRACKET && action == GLFW_PRESS) {
-    fovy /= 1.1;
+    zoom /= 1.1;
     updateCamera();
     return true;
   }
