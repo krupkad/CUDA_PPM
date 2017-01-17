@@ -25,9 +25,9 @@ PPM::PPM(bool glVis) :
   visDbgNormals(true),
   inFile(""),
   isBuilt(false),
-  kSelf(0.1f),
-  kDamp(0.5f),
-  kNbr(0.1f)
+  kSelf(10.0f),
+  kDamp(1.5f),
+  kNbr(10.0f)
 {}
 
 PPM::~PPM() {
@@ -312,7 +312,7 @@ void PPM::draw(Shader *vShader, Shader *tShader) {
     glDrawElements(GL_TRIANGLES, 3 * nFace, GL_UNSIGNED_INT, 0);
     
     glPointSize(3.0f);
-    vShader->setUniform("uColor", 0.3, 0.3f, 0.0f);
+    vShader->setUniform("uColor", 0.2f, 0.1f, 0.8f);
     vShader->setUniform("nShade", false);
     glBindVertexArray(vaoTess);
     vShader->bindIndexData(vboTessIdx);

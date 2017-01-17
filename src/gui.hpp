@@ -37,10 +37,11 @@ class PpmGui : public nanogui::Screen {
     glm::vec3 camPos, up, right;
     glm::mat4 mvp;
 
-    float ppmTime, fpsTime;
+    float ppmTime, fpsTime, prevTime;
     int nbFrames;
     nanogui::FloatBox<float> *ppmTimeBox;
 
+    int clickIdx;
     float fClick;
 
     Shader *shader;

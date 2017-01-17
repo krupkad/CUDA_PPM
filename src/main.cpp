@@ -26,14 +26,14 @@ int main(int argc, char *argv[]) {
         printf("%d -> ", nSamp);
         try {
           ppm->useTessSM = false;
-          float dt = ppm->update();
+          float dt = ppm->update(-1, 0.0f,.1f);
           printf("%f ", dt);
         } catch (const std::exception &e) {
           printf("%s ", e.what());
         }
         try {
           ppm->useTessSM = true;
-          float dt = ppm->update();
+          float dt = ppm->update(-1, 0.0f,.1f);
           printf("%f\n", dt);
         } catch (const std::exception &e) {
           printf("%s\n", e.what());
@@ -56,14 +56,14 @@ int main(int argc, char *argv[]) {
         printf("%d -> ", nBasis);
         try {
           ppm->useTessSM = false;
-          float dt = ppm->update();
+          float dt = ppm->update(-1, 0.0f,.1f);
           printf("%f ", dt);
         } catch (const std::exception &e) {
           printf("%s ", e.what());
         }
         try {
           ppm->useTessSM = true;
-          float dt = ppm->update();
+          float dt = ppm->update(-1, 0.0f,.1f);
           printf("%f\n", dt);
         } catch (const std::exception &e) {
           printf("%s\n", e.what());
@@ -88,14 +88,14 @@ int main(int argc, char *argv[]) {
         printf("%d -> ", nSub);
         try {
           ppm->useTessSM = false;
-          float dt = ppm->update();
+          float dt = ppm->update(-1, 0.0f,.1f);
           printf("%f ", dt);
         } catch (const std::exception &e) {
           printf("%s ", e.what());
         }
         try {
           ppm->useTessSM = true;
-          float dt = ppm->update();
+          float dt = ppm->update(-1, 0.0f,.1f);
           printf("%f\n", dt);
         } catch (const std::exception &e) {
           printf("%s\n", e.what());
@@ -114,7 +114,7 @@ int main(int argc, char *argv[]) {
       nSamp = 4;
       nSub = (1 << atoi(argv[3]));
       ppm->rebuild(argv[1], nBasis, nSamp, nSub);
-      ppm->update();
+      ppm->update(-1, 0.0f,.1f);
 
       float dt = 0, t;
       float2 uv;
@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) {
         float phi = 2.0f*float(rand())*M_PI/RAND_MAX, theta = float(rand())*M_PI/RAND_MAX;
         glm::vec3 p0(cos(phi)*cos(theta), sin(phi), cos(phi)*sin(theta));
         float t0 = clock();
-        ppm->intersect(p0, -p0, 1.0);
+        ppm->intersect(p0, -p0);
         float t1 = clock();
         dt += (t1-t0)/CLOCKS_PER_SEC;
       }

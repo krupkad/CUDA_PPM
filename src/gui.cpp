@@ -58,7 +58,8 @@ PpmGui::PpmGui(int w, int h) :
     yAngle(0), xAngle(0), zoom(5.0),
     ppmTime(0.0), fpsTime(0.0), nbFrames(0),
     fName(""), nBasis(4), nSamp(4), nSub(2),
-    fClick(5.0)
+    fClick(5.0e3f),
+    clickIdx(-1)
 {
   using namespace nanogui;
 
@@ -222,7 +223,7 @@ void PpmGui::click(int x, int y) {
   float vy = float(y) / canvas->height();
 
   glm::vec3 dir = glm::normalize(dz + tanf(fovx/2)*(2.0f*vx-1)*dx + tanf(fovy/2)*(1.0f - 2.0f*vy)*dy);
-  ppm->intersect(camPos, dir, fClick);
+  clickIdx = ppm->intersect(camPos, dir);
 }
 
 void PpmGui::rebuild() {
@@ -267,11 +268,14 @@ bool PpmGui::resizeEvent(const nanogui::Vector2i &size) {
 }
 
 void PpmGui::draw(NVGcontext *ctx) {
-  ppmTime += ppm->update();
+  float currentTime = glfwGetTime();
+  ppmTime += ppm->update(clickIdx, fClick, currentTime - prevTime);
+  clickIdx = -1;
+  prevTime = currentTime;
+
   Screen::draw(ctx);
 
   // perform timing
-  double currentTime = glfwGetTime();
   nbFrames++;
   if (currentTime - fpsTime >= 1.0) {
     ppmTimeBox->setValue(ppmTime / nbFrames);

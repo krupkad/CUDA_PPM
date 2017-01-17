@@ -32,10 +32,10 @@ class PPM {
 
     void rebuild(const char *fName, int nBasis, int nGrid, int nSub);
 
-    float update();
+    float update(int clickIdx, float clickForce, float dt);
     void draw(Shader *vShader, Shader *tShader);
 	
-    bool intersect(const glm::vec3 &p0, const glm::vec3 &dir, float fClick);
+    int intersect(const glm::vec3 &p0, const glm::vec3 &dir);
 
     // visualization options
     bool visSkel;
@@ -117,7 +117,7 @@ class PPM {
 
     void genSampTex();
     void genCoeff();
-    void updateCoeff();
+    void updateCoeff(int clickIdx, float clickForce, float dt);
     
     std::vector<void*> allocList;
     template <typename T>

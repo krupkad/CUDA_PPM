@@ -502,21 +502,8 @@ void PPM::devCoeffInit() {
   genCoeff();
 
   // initialize the deformation vector
-  float *dv = new float[9 * nVtx];
-  for (int i = 0; i < nVtx; i++) {
-    dv[9 * i + 0] = 0.0f;
-    dv[9 * i + 1] = 0.0f;
-    dv[9 * i + 2] = 0.0f;
-    dv[9 * i + 3] = 0.1 * (float(rand()) / RAND_MAX - 0.5f);
-    dv[9 * i + 4] = 0.1 * (float(rand()) / RAND_MAX - 0.5f);
-    dv[9 * i + 5] = 0.1 * (float(rand()) / RAND_MAX - 0.5f);
-    dv[9 * i + 6] = 0.0f;
-    dv[9 * i + 7] = 0.0f;
-    dv[9 * i + 8] = 0.0f;
-  }
   devAlloc(&dev_dv, 9 * nVtx*sizeof(float));
-  cudaMemcpy(dev_dv, dv, 9 * nVtx*sizeof(float), cudaMemcpyHostToDevice);
-  delete dv;
+  cudaMemset(dev_dv, 0, 9*nVtx*sizeof(float));
 }
 
 void PPM::devMeshInit() {
@@ -650,7 +637,7 @@ void PPM::devTessInit() {
 void PPM::devInit() {
 }
 
-float PPM::update() {
+float PPM::update(int clickIdx, float clickForce, float dt) {
   if (!isBuilt)
     return 0.0f;
 
@@ -663,7 +650,7 @@ float PPM::update() {
   dim3 blkCnt;
 
   // generate/update bezier coefficients
-  updateCoeff();
+  updateCoeff(clickIdx, clickForce, dt);
 
   // calculate new vertex positions
   if (useVisualize) {
@@ -747,14 +734,14 @@ float PPM::update() {
   if (useVisualize)
     cudaGraphicsUnmapResources(1, &dev_vboTessVtx, 0);
 
-  float dt;
+  float meas_dt;
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);
-  cudaEventElapsedTime(&dt, start, stop);
+  cudaEventElapsedTime(&meas_dt, start, stop);
   cudaEventDestroy(start);
   cudaEventDestroy(stop);
 
-  return dt;
+  return meas_dt;
 }
 
 // free dcel data
