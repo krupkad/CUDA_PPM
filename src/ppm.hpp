@@ -3,6 +3,7 @@
 
 #define _USE_MATH_DEFINES
 #include <cmath>
+#include <cstdint>
 
 #include <vector>
 #include <fstream>
@@ -24,6 +25,15 @@
 
 template <typename T>
 class Bezier;
+
+struct HeData {
+  int32_t src, tgt; // half-edge vertices, source to target
+  int32_t deg, ord; // half-edge loop info
+  int32_t revIdx;   // index of reverse half-edge (in same list)
+  int32_t xIdx;     // index of same half-edge (in other list)
+  int32_t bezOff;   // bezier data offset
+} __attribute__((aligned(32)));
+
 
 class PPM {
   public:
@@ -65,7 +75,7 @@ class PPM {
     std::vector<float> vList;
     std::string inFile;
     std::vector<int> fList;
-    std::vector<int4> heFaces, heLoops;
+    std::vector<HeData> heLoops, heFaces;
     std::vector<int2> vBndList;
     std::unordered_map<int, std::vector<int>> loopMap;
 
@@ -73,7 +83,8 @@ class PPM {
     float *dev_vList;
     int2 *dev_vBndList;
     Bezier<float> *bezier;
-    int4 *dev_heLoops, *dev_heFaces, *dev_heLoopsOrder;
+    HeData *dev_heLoops, *dev_heFaces;
+    int4 *dev_heLoopsOrder;
     float *dev_samp, *dev_coeff;
     float *dev_bezPatch, *dev_wgtPatch;
     float2 *dev_uvIdxMap;

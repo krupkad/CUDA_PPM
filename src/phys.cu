@@ -7,7 +7,7 @@
 #include <iterator>
 #include <algorithm>
 
-__global__ void kCalcInertia(int nFace, const int4 *heFaces, const float *vtxData, glm::mat3 *moiOut, float *massOut, glm::vec3 *cmOut) {
+__global__ void kCalcInertia(int nFace, const HeData *heFaces, const float *vtxData, glm::mat3 *moiOut, float *massOut, glm::vec3 *cmOut) {
   int fIdx = threadIdx.x + blockIdx.x * blockDim.x;
   if (fIdx >= nFace)
     return;
@@ -20,7 +20,7 @@ __global__ void kCalcInertia(int nFace, const int4 *heFaces, const float *vtxDat
   
   for (int i = 0; i < 3; i++) {
     for (int j = 0; j < 3; j++) {
-      pA[3*i + j] = vtxData[PPM_NVARS*heFaces[3*fIdx + i].x + j];
+      pA[3*i + j] = vtxData[PPM_NVARS*heFaces[3*fIdx + i].src + j];
       if (threadIdx.x == 0) pC[3*i + j] = (i == j) ? (1.0f/60) : (1.0f/120);
     }
   }
@@ -97,12 +97,15 @@ void PPM::physInit() {
   dim3 blkDim(256), blkCnt((nFace + 255)/256);
   int nSM = (1+blkDim.x) * sizeof(glm::mat3);
   kCalcInertia<<<blkCnt,blkDim,nSM>>>(nFace, dev_heFaces, dev_vList, dev_moi, dev_mass, dev_cm);
-  
+  checkCUDAError("kCalcInertia", __LINE__);
+
+  fprintf(stderr, "phys copy\n");
   cudaMemcpy(&moi, dev_moi, sizeof(glm::mat3), cudaMemcpyDeviceToHost);
   cudaMemcpy(&cm, dev_cm, sizeof(glm::vec3), cudaMemcpyDeviceToHost);
   cudaMemcpy(&mass, dev_mass, sizeof(float), cudaMemcpyDeviceToHost);
 
   kCenter<<<blkCnt,blkDim>>>(nVtx, cm, dev_vList);
+  checkCUDAError("kCenter", __LINE__);
   cudaMemcpy(&vList[0], dev_vList, PPM_NVARS*nVtx*sizeof(float), cudaMemcpyDeviceToHost);
   
   fprintf(stderr, "phys reduce\n");
@@ -260,7 +263,7 @@ __global__ void kPhysNeighbor(int nHe, const int4 *heLoops, float kSelf, float k
   atomicAdd(&dv[9*he.x + 8], kNbr * dv[9*he.y + 2] - kSelf * dv[9*he.x + 2] - kDamp*dv[9*he.x + 5]);
 }
 
-__global__ void kPhysNeighborAlt(int nVtx, const int4 *heLoops, const int2 *vBndList,
+__global__ void kPhysNeighborAlt(int nVtx, const HeData *heLoops, const int2 *vBndList,
                                  float kSelf, float kDamp, float kNbr, float *dv) {
   int vIdx = threadIdx.x + blockIdx.x * blockDim.x;
   if (vIdx >= nVtx)
@@ -276,7 +279,7 @@ __global__ void kPhysNeighborAlt(int nVtx, const int4 *heLoops, const int2 *vBnd
 
   //kNbr /= (bnd.y - bnd.x);
   for (int i = bnd.x; i < bnd.y; i++) {
-    int tgt = heLoops[i].y;
+    int tgt = heLoops[i].tgt;
     vSM[0] += kNbr * dv[9*tgt + 0];
     vSM[1] += kNbr * dv[9*tgt + 1];
     vSM[2] += kNbr * dv[9*tgt + 2];
@@ -316,7 +319,7 @@ __global__ void kPhysVerlet2(int nVtx, float *dv, float dt) {
   }
 */
 __global__ void kPhysClick(int nSub, int nSubVtx, int fSubIdx, const float2 *uvIdx, 
-                            const int4 *heFaces, const float *vData,
+                            const HeData *heFaces, const float *vData,
                             float force, float *dv) {
   int fIdx = fSubIdx / (nSub*nSub);
   int uvOff = fSubIdx - fIdx*nSub*nSub;
@@ -331,9 +334,9 @@ __global__ void kPhysClick(int nSub, int nSubVtx, int fSubIdx, const float2 *uvI
   }
   float w = 1.0f - uv.x - uv.y;
 
-  const int4 &he0 = heFaces[3*fIdx], &he1 = heFaces[3*fIdx+1], &he2 = heFaces[3*fIdx+2];
-  const float *v0 = &vData[PPM_NVARS*he0.x], *v1 = &vData[PPM_NVARS*he1.x], *v2 = &vData[PPM_NVARS*he2.x];
-  float *dv0 = &dv[9*he0.x], *dv1 = &dv[9*he1.x], *dv2 = &dv[9*he2.x];
+  const HeData &he0 = heFaces[3*fIdx], &he1 = heFaces[3*fIdx+1], &he2 = heFaces[3*fIdx+2];
+  const float *v0 = &vData[PPM_NVARS*he0.src], *v1 = &vData[PPM_NVARS*he1.src], *v2 = &vData[PPM_NVARS*he2.src];
+  float *dv0 = &dv[9*he0.src], *dv1 = &dv[9*he1.src], *dv2 = &dv[9*he2.src];
 
   float dx = force;
   dv0[6] += w * dx * v0[3];
@@ -408,7 +411,7 @@ void PPM::updateCoeff(int clickIdx,float clickForce,  float dt) {
   int nSM = 3*blkDim.x*sizeof(float);
   kPhysNeighborAlt<<<blkCnt,blkDim,nSM>>>(nVtx, dev_heLoops, dev_vBndList, kSelf, kDamp, kNbr, dev_dv);
   if (clickIdx > -1)
-    kPhysClick<<<1,1>>>(nSub, nSubVtx, clickIdx, dev_uvIdxMap, dev_heFaces, dev_vList, clickForce, dev_dv);
+    kPhysClick<<<1,1>>>(nSub, nSubVtx, clickIdx, dev_uvIdxMap, dev_heFaces, dev_vList, 1000.0f*clickForce, dev_dv);
   //kPhysNeighbor<<<blkCnt,blkDim>>>(nHe, dev_heLoops, kSelf, kDamp, kNbr, dev_dv);
   checkCUDAError("kPhysNeighbor", __LINE__);
   

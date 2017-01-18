@@ -40,12 +40,14 @@ PPM::~PPM() {
 void PPM::rebuild(const char *fName, int nBasis, int nGrid, int nSub) {
   if (isBuilt) {
     vList.clear();
+    vBndList.clear();
     heFaces.clear();
     heLoops.clear();
     fList.clear();
     loopMap.clear();
-    devFree();
     visFree();
+    devFree();
+    isBuilt = false;
   }
   
   if (!objRead(fName)) {
@@ -101,7 +103,7 @@ void PPM::getHeLoops() {
     for (first = 0; first < loop.size(); first++) {
       bool hasPred = false;
       for (int i = first+1; i < loop.size(); i++) {
-        if (heFaces[loop[first]].x == heFaces[loop[i]].y) {
+        if (heFaces[loop[first]].src == heFaces[loop[i]].tgt) {
           hasPred = true;
           break;
         }
@@ -110,19 +112,20 @@ void PPM::getHeLoops() {
       if (!hasPred)
         break;
     }
-    if (first != loop.size())
+    if (first != loop.size()) 
       std::swap(loop[first],loop[0]);
 
     // finish the chain
     for (int i = 0; i < loop.size()-1; i++) {
-      int dst = heFaces[loop[i]].y;
+      int dst = heFaces[loop[i]].tgt;
       for (int j = i+1; j < loop.size(); j++) {
-        int src = heFaces[loop[j]].x;
+        int src = heFaces[loop[j]].src;
         if (src == dst) {
           std::swap(loop[i+1],loop[j]);
           break;
         }
       }
+
     }
   }
 
@@ -132,8 +135,22 @@ void PPM::getHeLoops() {
   for (int v1 = 0; v1 < nVtx; v1++) {
     int2 vRange;
     vRange.x = heLoops.size();
-    for (int heIdx : loopMap[v1])
-      heLoops.push_back(make_int4(v1, heFaces[heIdx].x, 0, 0));
+    struct HeData he;
+    for (int i = 0; i < loopMap[v1].size(); i++) {
+      int heIdx = loopMap[v1][i];
+      he.src = v1;
+      he.tgt = heFaces[heIdx].src;
+      int fIdx = heIdx/3;
+      for (int k = 0; k < 3; k++) {
+        if (heFaces[3*fIdx+k].src == he.src && heFaces[3*fIdx+k].tgt == he.tgt)
+          heIdx = 3*fIdx+k;
+      }
+      he.xIdx = heIdx;
+      heFaces[heIdx].xIdx = heLoops.size();
+      he.ord = heFaces[heIdx].ord = i;
+      he.deg = heFaces[heIdx].deg = loopMap[v1].size();
+      heLoops.push_back(he);
+    }
 	  vRange.y = heLoops.size();
     vBndList.push_back(vRange);
 
@@ -185,19 +202,22 @@ bool PPM::objReadFace(std::istream &fStream) {
     return false;
   }
 
-  int4 he;
+  HeData he;
 
-  he = make_int4(vIdxList[0]-1, vIdxList[1]-1, 0, 0);
+  he.src = vIdxList[0]-1;
+  he.tgt = vIdxList[1]-1;
   fList.push_back(vIdxList[0] - 1);
   loopMap[vIdxList[2]-1].push_back(heFaces.size());
   heFaces.push_back(he);
 
-  he = make_int4(vIdxList[1] - 1, vIdxList[2] - 1, 0, 0);
+  he.src = vIdxList[1]-1;
+  he.tgt = vIdxList[2]-1;
   fList.push_back(vIdxList[1] - 1);
   loopMap[vIdxList[0]-1].push_back(heFaces.size());
   heFaces.push_back(he);
 
-  he = make_int4(vIdxList[2] - 1, vIdxList[0] - 1, 0, 0);
+  he.src = vIdxList[2]-1;
+  he.tgt = vIdxList[0]-1;
   fList.push_back(vIdxList[2] - 1);
   loopMap[vIdxList[1]-1].push_back(heFaces.size());
   heFaces.push_back(he);
@@ -233,8 +253,8 @@ bool PPM::objRead(const char *fName) {
 
   // check that vertex indices are valid
   nVtx = vList.size()/PPM_NVARS;
-  for (const int4 &v : heFaces) {
-    if (v.x < 0 || v.x >= nVtx || v.y < 0 || v.y >= nVtx) return false;
+  for (const HeData &v : heFaces) {
+    if (v.src < 0 || v.src >= nVtx || v.tgt < 0 || v.tgt >= nVtx) return false;
   }
 
   // get the vertex count
