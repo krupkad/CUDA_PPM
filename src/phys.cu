@@ -115,6 +115,7 @@ void PPM::physInit() {
   for (int j = 0; j < 3; j++) {
     moi[i][j] = ((i == j) ? tr : 0.0f) - moi[i][j];
   }}
+  mass *= 1000.0f;
 
   fprintf(stderr, "phys result: %f (%f %f %f)\n", mass, cm.x, cm.y, cm.z);
   fprintf(stderr, "%f %f %f\n", moi[0][0], moi[1][0], moi[2][0]);
@@ -231,10 +232,13 @@ __global__ void kUpdateCoeff(int nBasis2, int nVtx, const float *V, float sigma,
   coeff[tIdx + 2 * nVtx*nBasis2] += dv[5] * v * dt;
 }
 
-__global__ void kPhysVerlet1(int nVtx, float *dv, float mass, float dt) {
+__global__ void kPhysVerlet1(int nVtx, float *dv, float mass, const int2 *vBndList, float dt) {
   int vIdx = threadIdx.x + blockIdx.x * blockDim.x;
   if (vIdx >= nVtx)
     return;
+
+  const int2 &bnd = vBndList[vIdx];
+  mass *= (bnd.y - bnd.x);
 
   dv = &dv[9*vIdx];
   dv[3] += 0.5f*dv[6]*dt / mass;
@@ -263,7 +267,6 @@ __global__ void kPhysNeighbor(int nVtx, const HeData *heLoops, const int2 *vBndL
   vSM[1] = kSelf * dv[9*vIdx + 1];
   vSM[2] = kSelf * dv[9*vIdx + 2];
 
-  //kNbr /= (bnd.y - bnd.x);
   for (int i = bnd.x; i < bnd.y; i++) {
     int tgt = heLoops[i].tgt;
     vSM[0] += kNbr * dv[9*tgt + 0];
@@ -377,10 +380,10 @@ int PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir) {
   return idx;
 }
 
-void PPM::updateCoeff(int clickIdx,float clickForce,  float dt) {
+void PPM::updateCoeff(int clickIdx, float clickForce,  float dt) {
   dim3 blkDim(128), blkCnt;
   blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
-  kPhysVerlet1<<<blkCnt,blkDim>>>(nVtx, dev_dv, 1000.0f*mass/nVtx, dt);
+  kPhysVerlet1<<<blkCnt,blkDim>>>(nVtx, dev_dv, mass/nHe, dev_vBndList, dt);
   checkCUDAError("kPhysVerlet1", __LINE__); 
   
   blkDim.x = 16;

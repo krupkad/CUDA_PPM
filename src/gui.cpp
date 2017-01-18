@@ -58,7 +58,7 @@ PpmGui::PpmGui(int w, int h) :
     yAngle(0), xAngle(0), zoom(5.0),
     ppmTime(0.0), fpsTime(0.0), nbFrames(0),
     fName(""), nBasis(4), nSamp(4), nSub(2),
-    fClick(5.0e3f),
+    fClick(5.0f),
     clickIdx(-1)
 {
   using namespace nanogui;
@@ -269,12 +269,13 @@ bool PpmGui::resizeEvent(const nanogui::Vector2i &size) {
 
 void PpmGui::draw(NVGcontext *ctx) {
   float currentTime = glfwGetTime();
-  ppmTime += ppm->update(clickIdx, fClick, currentTime - prevTime);
-  clickIdx = -1;
+  float dt = currentTime - prevTime;
   prevTime = currentTime;
+  ppmTime += ppm->update(clickIdx, fClick, dt);
+  clickIdx = -1;
 
   Screen::draw(ctx);
-
+  
   // perform timing
   nbFrames++;
   if (currentTime - fpsTime >= 1.0) {
