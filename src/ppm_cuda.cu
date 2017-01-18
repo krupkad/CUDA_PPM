@@ -190,6 +190,7 @@ __global__ void kTessVtx_Face(int nVtx, int nFace, int nSub, int nBasis2,
   const HeData &he2 = heFaces[3 * fIdx + 2];
 
   float res = 0.0, wgt = 0.0;
+  //printf("%d %d %d\n", he0.bezOff, he1.bezOff, he2.bezOff);
   wgt += patchContrib(he0.bezOff*nSubVtx + UV_IDX(uv.x, uv.y), he0.src + dataIdx*nVtx, nBasis2, bezData, wgtData, coeff, res);
   wgt += patchContrib(he1.bezOff*nSubVtx + UV_IDX(uv.y, nSub-uv.x-uv.y), he1.src + dataIdx*nVtx, nBasis2, bezData, wgtData, coeff, res);
   wgt += patchContrib(he2.bezOff*nSubVtx + UV_IDX(nSub-uv.x-uv.y, uv.x), he2.src + dataIdx*nVtx, nBasis2, bezData, wgtData, coeff, res);
@@ -430,22 +431,22 @@ void PPM::devCoeffInit() {
 }
 
 void PPM::devMeshInit() {
-  fprintf(stderr, "uploading mesh data\n");
-  devAlloc(&dev_vList, PPM_NVARS*nVtx*sizeof(float));
-  cudaMemcpy(dev_vList, &vList[0],  PPM_NVARS*nVtx*sizeof(float), cudaMemcpyHostToDevice);
-  
   // populate the loops
   fprintf(stderr, "sorting loops\n");
   getHeLoops();
+  
+  fprintf(stderr, "uploading mesh data\n");
   devAlloc(&dev_heLoops, nHe*sizeof(HeData));
   cudaMemcpy(dev_heLoops, &heLoops[0], nHe*sizeof(HeData), cudaMemcpyHostToDevice);
   devAlloc(&dev_heFaces, nHe*sizeof(HeData));
   cudaMemcpy(dev_heFaces, &heFaces[0], nHe*sizeof(HeData), cudaMemcpyHostToDevice);
   devAlloc(&dev_vBndList, nVtx*sizeof(int2));
   cudaMemcpy(dev_vBndList, &vBndList[0], nVtx*sizeof(int2), cudaMemcpyHostToDevice);
-
+  devAlloc(&dev_vList, PPM_NVARS*nVtx*sizeof(float));
+  cudaMemcpy(dev_vList, &vList[0],  PPM_NVARS*nVtx*sizeof(float), cudaMemcpyHostToDevice);
+  
   // recalculate normals
-  dim3 blkDim(1024);
+  dim3 blkDim(256);
   dim3 blkCnt((nHe + blkDim.x - 1)/blkDim.x);
   kGetHeRevIdx<<<blkCnt, blkDim>>>(nHe, degMin, dev_heLoops, dev_heFaces, dev_vBndList);
   checkCUDAError("kGetRevIdx", __LINE__);
@@ -576,8 +577,8 @@ float PPM::update(int clickIdx, float clickForce, float dt) {
 
   if (nSub > 2) {
     blkDim.x = 16;
-    blkDim.y = 16;
-    blkDim.z = 4;
+    blkDim.y = 4;
+    blkDim.z = 2;
     blkCnt.x = (nFace + blkDim.x - 1) / blkDim.x;
     blkCnt.y = ((nSub-1)*(nSub-2)/2 + blkDim.y - 1) / blkDim.y;
     blkCnt.z = (PPM_NVARS + blkDim.z - 1) / blkDim.z;
@@ -587,7 +588,7 @@ float PPM::update(int clickIdx, float clickForce, float dt) {
   }
   
   if (nSub > 1) {
-    blkDim.x = 64;
+    blkDim.x = 16;
     blkDim.y = 4;
     blkDim.z = 2;
     blkCnt.x = (nHe/2 + blkDim.x - 1) / blkDim.x;
@@ -598,8 +599,8 @@ float PPM::update(int clickIdx, float clickForce, float dt) {
     checkCUDAError("kTessVtx_Edge", __LINE__);
   }
   
-  blkDim.x = 64;
-  blkDim.y = 16;
+  blkDim.x = 32;
+  blkDim.y = 4;
   blkDim.z = 1;
   blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
   blkCnt.y = (PPM_NVARS + blkDim.y - 1) / blkDim.y;

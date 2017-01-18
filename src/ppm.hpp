@@ -26,14 +26,21 @@
 template <typename T>
 class Bezier;
 
+#if defined(__CUDACC__) // NVCC
+   #define MY_ALIGN(n) __align__(n)
+#elif defined(__GNUC__) // GCC
+  #define MY_ALIGN(n) __attribute__((aligned(n)))
+#elif defined(_MSC_VER) // MSVC
+  #define MY_ALIGN(n) __declspec(align(n))
+#endif
+
 struct HeData {
   int32_t src, tgt; // half-edge vertices, source to target
   int32_t deg, ord; // half-edge loop info
   int32_t revIdx;   // index of reverse half-edge (in same list)
   int32_t xIdx;     // index of same half-edge (in other list)
   int32_t bezOff;   // bezier data offset
-} __attribute__((aligned(32)));
-
+} MY_ALIGN(32);
 
 class PPM {
   public:

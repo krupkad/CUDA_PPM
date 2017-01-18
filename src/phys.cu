@@ -104,6 +104,7 @@ void PPM::physInit() {
   cudaMemcpy(&cm, dev_cm, sizeof(glm::vec3), cudaMemcpyDeviceToHost);
   cudaMemcpy(&mass, dev_mass, sizeof(float), cudaMemcpyDeviceToHost);
 
+  fprintf(stderr, "phys recenter\n");
   kCenter<<<blkCnt,blkDim>>>(nVtx, cm, dev_vList);
   checkCUDAError("kCenter", __LINE__);
   cudaMemcpy(&vList[0], dev_vList, PPM_NVARS*nVtx*sizeof(float), cudaMemcpyDeviceToHost);
@@ -230,18 +231,15 @@ __global__ void kUpdateCoeff(int nBasis2, int nVtx, const float *V, float sigma,
   coeff[tIdx + 2 * nVtx*nBasis2] += dv[5] * v * dt;
 }
 
-__global__ void kPhysVerlet1(int nVtx, float *dv, float rMass, const int2 *vBndList, float dt) {
+__global__ void kPhysVerlet1(int nVtx, float *dv, float mass, float dt) {
   int vIdx = threadIdx.x + blockIdx.x * blockDim.x;
   if (vIdx >= nVtx)
     return;
 
-  const int2 &bnd = vBndList[vIdx];
-  //rMass *= bnd.y - bnd.x;
-
   dv = &dv[9*vIdx];
-  dv[3] += 0.5f*dv[6]*dt / rMass;
-  dv[4] += 0.5f*dv[7]*dt / rMass;
-  dv[5] += 0.5f*dv[8]*dt / rMass;
+  dv[3] += 0.5f*dv[6]*dt / mass;
+  dv[4] += 0.5f*dv[7]*dt / mass;
+  dv[5] += 0.5f*dv[8]*dt / mass;
   dv[0] += dv[3]*dt;
   dv[1] += dv[4]*dt;
   dv[2] += dv[5]*dt;
@@ -251,19 +249,7 @@ __global__ void kPhysVerlet1(int nVtx, float *dv, float rMass, const int2 *vBndL
   dv[8] = 0.0f;
 }
 
-__global__ void kPhysNeighbor(int nHe, const int4 *heLoops, float kSelf, float kDamp, float kNbr, float *dv) {
-  int heIdx = threadIdx.x + blockIdx.x * blockDim.x;
-  if (heIdx >= nHe)
-    return;
-
-  const int4 &he = heLoops[heIdx];
-  kSelf = kSelf + kNbr;
-  atomicAdd(&dv[9*he.x + 6], kNbr * dv[9*he.y + 0] - kSelf * dv[9*he.x + 0] - kDamp*dv[9*he.x + 3]); 
-  atomicAdd(&dv[9*he.x + 7], kNbr * dv[9*he.y + 1] - kSelf * dv[9*he.x + 1] - kDamp*dv[9*he.x + 4]);
-  atomicAdd(&dv[9*he.x + 8], kNbr * dv[9*he.y + 2] - kSelf * dv[9*he.x + 2] - kDamp*dv[9*he.x + 5]);
-}
-
-__global__ void kPhysNeighborAlt(int nVtx, const HeData *heLoops, const int2 *vBndList,
+__global__ void kPhysNeighbor(int nVtx, const HeData *heLoops, const int2 *vBndList,
                                  float kSelf, float kDamp, float kNbr, float *dv) {
   int vIdx = threadIdx.x + blockIdx.x * blockDim.x;
   if (vIdx >= nVtx)
@@ -394,7 +380,7 @@ int PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir) {
 void PPM::updateCoeff(int clickIdx,float clickForce,  float dt) {
   dim3 blkDim(128), blkCnt;
   blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
-  kPhysVerlet1<<<blkCnt,blkDim>>>(nVtx, dev_dv, 1000.0f*mass/nVtx, dev_vBndList, dt);
+  kPhysVerlet1<<<blkCnt,blkDim>>>(nVtx, dev_dv, 1000.0f*mass/nVtx, dt);
   checkCUDAError("kPhysVerlet1", __LINE__); 
   
   blkDim.x = 16;
@@ -409,10 +395,9 @@ void PPM::updateCoeff(int clickIdx,float clickForce,  float dt) {
   blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
   blkCnt.y = 1;
   int nSM = 3*blkDim.x*sizeof(float);
-  kPhysNeighborAlt<<<blkCnt,blkDim,nSM>>>(nVtx, dev_heLoops, dev_vBndList, kSelf, kDamp, kNbr, dev_dv);
+  kPhysNeighbor<<<blkCnt,blkDim,nSM>>>(nVtx, dev_heLoops, dev_vBndList, kSelf, kDamp, kNbr, dev_dv);
   if (clickIdx > -1)
     kPhysClick<<<1,1>>>(nSub, nSubVtx, clickIdx, dev_uvIdxMap, dev_heFaces, dev_vList, 1000.0f*clickForce, dev_dv);
-  //kPhysNeighbor<<<blkCnt,blkDim>>>(nHe, dev_heLoops, kSelf, kDamp, kNbr, dev_dv);
   checkCUDAError("kPhysNeighbor", __LINE__);
   
   blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
