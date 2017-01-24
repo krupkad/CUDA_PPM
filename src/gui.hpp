@@ -35,7 +35,7 @@ class PpmGui : public nanogui::Screen {
     float fovy, zNear, zFar;
     float xAngle, yAngle, zoom;
     glm::vec3 camPos, up, right;
-    glm::mat4 mvp;
+    glm::mat4 mvp, model, view, projection;
 
     float ppmTime, fpsTime, prevTime;
     int nbFrames;
@@ -43,6 +43,7 @@ class PpmGui : public nanogui::Screen {
 
     int clickIdx;
     float fClick;
+    glm::vec3 clickDir;
 
     Shader *shader;
 };

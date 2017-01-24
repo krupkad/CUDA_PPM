@@ -1,8 +1,12 @@
 #include "ppm.hpp"
 #include "bezier.hpp"
 #include "util/error.hpp"
+#include "util/uvidx.hpp"
 
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <iterator>
 #include <algorithm>
@@ -307,19 +311,19 @@ __global__ void kPhysVerlet2(int nVtx, float *dv, float dt) {
     idxOut[3*fSubIdx + 2] = tessGetIdx(uv.x, uv.y + 1, heLoops, heFaces, heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
   }
 */
-__global__ void kPhysClick(int nSub, int nSubVtx, int fSubIdx, const float2 *uvIdx, 
-                            const HeData *heFaces, const float *vData,
-                            float force, float *dv) {
+__global__ void kPhysClick(int nSub, int nSubVtx, int fSubIdx, 
+                            const HeData *heFaces, const float *vData, const float *force,
+                            float *dv) {
   int fIdx = fSubIdx / (nSub*nSub);
   int uvOff = fSubIdx - fIdx*nSub*nSub;
 
   float2 uv;
   if (uvOff >= nSubVtx - nSub - 1) {
-    uv = uvIdx[uvOff - (nSubVtx - nSub - 1)];
+    fUvInternalIdxMap(uvOff-(nSubVtx-nSub-1), uv, nSub);
     uv.x += 1.0f/nSub;
     uv.y += 1.0f/nSub;
   } else {
-    uv = uvIdx[uvOff];
+    fUvInternalIdxMap(uvOff, uv, nSub);
   }
   float w = 1.0f - uv.x - uv.y;
 
@@ -327,27 +331,66 @@ __global__ void kPhysClick(int nSub, int nSubVtx, int fSubIdx, const float2 *uvI
   const float *v0 = &vData[PPM_NVARS*he0.src], *v1 = &vData[PPM_NVARS*he1.src], *v2 = &vData[PPM_NVARS*he2.src];
   float *dv0 = &dv[9*he0.src], *dv1 = &dv[9*he1.src], *dv2 = &dv[9*he2.src];
 
-  float dx = force;
-  dv0[6] += w * dx * v0[3];
-  dv0[7] += w * dx * v0[4];
-  dv0[8] += w * dx * v0[5];
-  dv1[6] += uv.x * dx * v1[3];
-  dv1[7] += uv.x * dx * v1[4];
-  dv1[8] += uv.x * dx * v1[5];
-  dv2[6] += uv.y * dx * v2[3];
-  dv2[7] += uv.y * dx * v2[4];
-  dv2[8] += uv.y * dx * v2[5];
+  dv0[6] += w * force[0];
+  dv0[7] += w * force[1];
+  dv0[8] += w * force[2];
+  dv1[6] += uv.x * force[0];
+  dv1[7] += uv.x * force[1];
+  dv1[8] += uv.x * force[2];
+  dv2[6] += uv.y * force[0];
+  dv2[7] += uv.y * force[1];
+  dv2[8] += uv.y * force[2];
+}
+
+__global__ void kPhysClick_RigidBody(int nSub, int nSubVtx, int fSubIdx, 
+                            const HeData *heFaces, const float *vData,
+                           const float *force, float *rbTorque) {
+  int fIdx = fSubIdx / (nSub*nSub);
+  int uvOff = fSubIdx - fIdx*nSub*nSub;
+
+  float2 uv;
+  if (uvOff >= nSubVtx - nSub - 1) {
+    fUvInternalIdxMap(uvOff-(nSubVtx-nSub-1), uv, nSub);
+    uv.x += 1.0f/nSub;
+    uv.y += 1.0f/nSub;
+  } else {
+    fUvInternalIdxMap(uvOff, uv, nSub);
+  }
+  float w = 1.0f - uv.x - uv.y;
+
+  const HeData &he0 = heFaces[3*fIdx], &he1 = heFaces[3*fIdx+1], &he2 = heFaces[3*fIdx+2];
+  const float *v0 = &vData[PPM_NVARS*he0.src], *v1 = &vData[PPM_NVARS*he1.src], *v2 = &vData[PPM_NVARS*he2.src];
+
+  glm::vec3 arm;
+  for (int i = 0; i < 3; i++) 
+    arm[i] = w*v0[i] + uv.x*v1[i] + uv.y*v2[i];
+  rbTorque[0] = arm[1]*force[2] - arm[2]*force[1];
+  rbTorque[1] = arm[2]*force[0] - arm[0]*force[2];
+  rbTorque[2] = arm[0]*force[1] - arm[1]*force[0];
 }
 
 int PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir) {
   if (!isBuilt)
     return false;
 
+  glm::mat4 im = glm::inverse(model) ;
+  glm::vec4 lp0_4(0.0f), ldir_4(0.0f);
+  printf("%f %f %f\n", p0.x, p0.y, p0.z);
+  for (int i = 0; i < 4; i++) {
+    for (int j = 0; j < 3; j++) {
+      lp0_4[i] += im[j][i]*p0[j];
+      ldir_4[i] += im[j][i]*dir[j];
+    }
+    lp0_4[i] += im[3][i];
+  }
+  glm::vec3 lp0(lp0_4.x/lp0_4.w, lp0_4.y/lp0_4.w, lp0_4.z/lp0_4.w);
+  glm::vec3 ldir(ldir_4.x, ldir_4.y, ldir_4.z);
+  
   unsigned int *dev_count;
   cudaMalloc(&dev_count, sizeof(unsigned int));
   cudaMemset(dev_count, 0, sizeof(unsigned int));
   dim3 blkCnt((nFace*nSubFace + 255) / 256), blkDim(256);
-  kMeshIntersect<<<blkCnt,blkDim>>>(false, false, nFace*nSubFace, dev_tessIdx, dev_tessVtx, p0, dir, dev_count, nullptr, nullptr);
+  kMeshIntersect<<<blkCnt,blkDim>>>(false, false, nFace*nSubFace, dev_tessIdx, dev_tessVtx, lp0, ldir, dev_count, nullptr, nullptr);
   checkCUDAError("kMeshIntersect", __LINE__);
   
   unsigned int count;
@@ -358,12 +401,11 @@ int PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir) {
     return -1;
   }
   
-  float2 *dev_uvOut;
   float *dev_tOut;
   int *dev_idxOut;
   cudaMalloc(&dev_tOut, count*sizeof(float));
   cudaMalloc(&dev_idxOut, count*sizeof(int));
-  kMeshIntersect<<<blkCnt,blkDim>>>(true, false, nFace*nSubFace, dev_tessIdx, dev_tessVtx, p0, dir, dev_count, dev_idxOut, dev_tOut);
+  kMeshIntersect<<<blkCnt,blkDim>>>(true, false, nFace*nSubFace, dev_tessIdx, dev_tessVtx, lp0, ldir, dev_count, dev_idxOut, dev_tOut);
   checkCUDAError("kMeshIntersect", __LINE__);
   
   std::vector<float> tOut(count);
@@ -380,12 +422,71 @@ int PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir) {
   return idx;
 }
 
-void PPM::updateCoeff(int clickIdx, float clickForce,  float dt) {
+void PPM::updateRigidBody(int clickIdx, const glm::vec3 &clickForce, float dt) {
+
+  static bool done = false;
+
+  // rotation VV1, half-torque appliucation
+  rbAngMom[0] += 0.5f * dt * rbTorque[0];
+  rbAngMom[1] += 0.5f * dt * rbTorque[1];
+  rbAngMom[2] += 0.5f * dt * rbTorque[2];
+ 
+  // rotation VV1, velocity application
+  glm::mat3 rot = glm::toMat3(rbRot);
+  glm::vec3 w = rot*glm::inverse(moi)*glm::transpose(rot)*rbAngMom / 1.0e3f;
+  float th = glm::length(w);
+  if (th > 0.001f) {
+    glm::quat dq = glm::angleAxis(th*dt, w/th);
+    rbRot = dq * rbRot;
+  }
+  model = glm::toMat4(rbRot);
+  model[3][0] = rbPos[0];
+  model[3][1] = rbPos[1];
+  model[3][2] = rbPos[2];
+  model[3][3] = 1.0f;
+
+  if (clickIdx > -1) {
+    // rotation VV1, get acceleration
+    float *dev_rbTorque, *dev_rbForce;
+    cudaMalloc(&dev_rbTorque, 3*sizeof(float));
+    cudaMalloc(&dev_rbForce, 3*sizeof(float));
+
+    glm::mat4 im = glm::inverse(model) ;
+    glm::vec4 lF_4(0.0f);
+    for (int i = 0; i < 4; i++) {
+      for (int j = 0; j < 3; j++) {
+        lF_4[i] += im[j][i]*clickForce[j];
+      }
+    }
+    glm::vec3 lF(1000.0f*lF_4.x, 1000.0f*lF_4.y, 1000.0f*lF_4.z);
+    cudaMemcpy(dev_rbForce, glm::value_ptr(lF), 3*sizeof(float), cudaMemcpyHostToDevice);
+    
+    kPhysClick_RigidBody<<<1,1>>>(nSub, nSubVtx, clickIdx, dev_heFaces, dev_vList, dev_rbForce, dev_rbTorque);
+    cudaMemcpy(glm::value_ptr(rbTorque), dev_rbTorque, 3*sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(dev_rbTorque);
+    cudaFree(dev_rbForce);
+  } else {
+    rbTorque[0] = rbTorque[1] = rbTorque[2] = 0.0f;
+  }
+
+  if (!done) {
+    done = true;
+    rbTorque[0] = 25.0f;
+    rbTorque[1] = 0.0f;
+    rbTorque[2] = 0.1f;
+  };
+  // rotation VV1, half-torque
+  rbAngMom[0] += 0.5f * dt * rbTorque[0];
+  rbAngMom[1] += 0.5f * dt * rbTorque[1];
+  rbAngMom[2] += 0.5f * dt * rbTorque[2];
+}
+
+void PPM::updateCoeff(int clickIdx, const glm::vec3 &clickForce,  float dt) {
   dim3 blkDim(128), blkCnt;
   blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
   kPhysVerlet1<<<blkCnt,blkDim>>>(nVtx, dev_dv, mass/nHe, dev_vBndList, dt);
   checkCUDAError("kPhysVerlet1", __LINE__); 
-  
+ 
   blkDim.x = 16;
   blkDim.y = 64;
   blkCnt.x = (nBasis2 + blkDim.x - 1) / blkDim.x;
@@ -399,8 +500,13 @@ void PPM::updateCoeff(int clickIdx, float clickForce,  float dt) {
   blkCnt.y = 1;
   int nSM = 3*blkDim.x*sizeof(float);
   kPhysNeighbor<<<blkCnt,blkDim,nSM>>>(nVtx, dev_heLoops, dev_vBndList, kSelf, kDamp, kNbr, dev_dv);
-  if (clickIdx > -1)
-    kPhysClick<<<1,1>>>(nSub, nSubVtx, clickIdx, dev_uvIdxMap, dev_heFaces, dev_vList, 1000.0f*clickForce, dev_dv);
+  if (clickIdx > -1) {
+    float *dev_clickForce;
+    cudaMalloc(&dev_clickForce, 3*sizeof(float));
+    cudaMemcpy(dev_clickForce, glm::value_ptr(clickForce), 3*sizeof(float), cudaMemcpyHostToDevice);
+    kPhysClick<<<1,1>>>(nSub, nSubVtx, clickIdx, dev_heFaces, dev_vList, dev_clickForce, dev_dv);
+    cudaFree(dev_clickForce);
+  }
   checkCUDAError("kPhysNeighbor", __LINE__);
   
   blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;

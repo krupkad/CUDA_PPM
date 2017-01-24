@@ -7,9 +7,10 @@
 #include "ppm.hpp"
 #include "bezier.hpp"
 #include "util/error.hpp"
+#include "util/uvidx.hpp"
 
 // output weights and bezier basis coefficients for tessellated subvertices of a patch
-__global__ void kBezEval(int deg, int nBasis, int nSubVtx, const float2 *uvIdxMap, float *bzOut, float *wgtOut) {
+__global__ void kBezEval(int deg, int nBasis, int nSub, int nSubVtx, float *bzOut, float *wgtOut) {
   int dIdx = blockIdx.x * blockDim.x + threadIdx.x;
   int uvIdx = blockIdx.y * blockDim.y + threadIdx.y;
   if (dIdx >= deg || uvIdx >= nSubVtx)
@@ -25,7 +26,8 @@ __global__ void kBezEval(int deg, int nBasis, int nSubVtx, const float2 *uvIdxMa
   float2 *sWork = &sAll[tIdx*nSM + 2];
 
   // get sector-local xy
-  const float2 &uv = uvIdxMap[uvIdx];
+  float2 uv;
+  fUvIdxMap(uvIdx, uv, nSub);
   float a = 2.0 / deg;
   float ca, sa;
   sincospif(a, &sa, &ca);
@@ -175,8 +177,7 @@ __device__ float patchContrib(int dIdx, int vIdx, int nBasis2, const float *bez,
 // generate the per-face template for tessellation
 #define UV_IDX(u,v) (((u)+(v)+1)*((u)+(v))/2 + (v))
 __global__ void kTessVtx_Face(int nVtx, int nFace, int nSub, int nBasis2,
-                        const HeData *heFaces, const float *bezData, const float *wgtData, const float *coeff,
-                        const int2 *uvIdxMap, float *vDataOut) {
+                        const HeData *heFaces, const float *bezData, const float *wgtData, const float *coeff, float *vDataOut) {
   int fIdx = blockIdx.x * blockDim.x + threadIdx.x;
   int uvIdx = blockIdx.y * blockDim.y + threadIdx.y;
   int dataIdx = blockIdx.z * blockDim.z + threadIdx.z;
@@ -184,7 +185,8 @@ __global__ void kTessVtx_Face(int nVtx, int nFace, int nSub, int nBasis2,
   if (fIdx >= nFace || uvIdx >= (nSub-1)*(nSub-2)/2 || dataIdx >= PPM_NVARS)
     return;
     
-  const int2 &uv = uvIdxMap[uvIdx];
+  int2 uv;
+  fIuvInternalIdxMap(uvIdx,uv);
   const HeData &he0 = heFaces[3 * fIdx + 0];
   const HeData &he1 = heFaces[3 * fIdx + 1];
   const HeData &he2 = heFaces[3 * fIdx + 2];
@@ -297,8 +299,7 @@ __device__ inline int tessGetIdx(int u, int v, const HeData *heFaces, const int 
 }
 
 __global__ void kTessEdges(int nVtx, int nHe, int nFace, int nSub,
-                                const HeData *heFaces, const int *heTessOrder,
-                                const int2 *uvIdxMap, int *idxOut) {
+                                const HeData *heFaces, const int *heTessOrder, int *idxOut) {
   int fIdx = blockIdx.x * blockDim.x + threadIdx.x;
   int vSubIdx = blockIdx.y * blockDim.y + threadIdx.y;
   int nSubVtx = (nSub + 1)*(nSub + 2) / 2;
@@ -307,8 +308,9 @@ __global__ void kTessEdges(int nVtx, int nHe, int nFace, int nSub,
     return;
 
   int fSubIdx;
-  const int2 &uv = uvIdxMap[vSubIdx];
-  
+  int2 uv;
+  fIuvIdxMap(vSubIdx,uv);
+
   if (uv.x > 0 && uv.y > 0) {
     fSubIdx = fIdx*nSubFace + UV_IDX(uv.x - 1, uv.y - 1) + nSubVtx - nSub - 1;
     idxOut[3*fSubIdx + 0] = tessGetIdx(uv.x, uv.y, heFaces, heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
@@ -458,33 +460,6 @@ void PPM::devPatchInit() {
   // initialize the bezier patch calculator
   bezier = new Bezier<float>(nBasis, nGrid);
 
-  // build the uv index map
-  fprintf(stderr, "creating uv index map %d\n", nSubVtx);
-  float2 *uvIdxMap = new float2[nSubVtx];
-  int2 *iuvIdxMap = new int2[nSubVtx];
-  for (int v = 0; v <= nSub; v++) {
-  for (int u = 0; u <= nSub - v; u++) {
-	  uvIdxMap[UV_IDX(u, v)] = make_float2(float(u) / nSub, float(v) / nSub);
-	  iuvIdxMap[UV_IDX(u, v)] = make_int2(u,v);
-  }}
-  devAlloc(&dev_uvIdxMap, nSubVtx*sizeof(float2));
-  cudaMemcpy(dev_uvIdxMap, uvIdxMap, nSubVtx*sizeof(float2), cudaMemcpyHostToDevice);
-  devAlloc(&dev_iuvIdxMap, nSubVtx*sizeof(int2));
-  cudaMemcpy(dev_iuvIdxMap, iuvIdxMap, nSubVtx*sizeof(int2), cudaMemcpyHostToDevice);
-  delete uvIdxMap;
-  delete iuvIdxMap;
-
-  if (nSub > 2) {
-    int2 *iuvInternalIdxMap = new int2[(nSub-1)*(nSub-2)/2];
-    for (int v = 0; v <= nSub-3; v++) {
-    for (int u = 0; u <= nSub-3-v; u++) {
-      iuvInternalIdxMap[UV_IDX(u,v)] = make_int2(u+1,v+1);
-    }}
-    devAlloc(&dev_iuvInternalIdxMap, (nSub-1)*(nSub-2)*sizeof(int2)/2);
-    cudaMemcpy(dev_iuvInternalIdxMap, iuvInternalIdxMap, (nSub-1)*(nSub-2)*sizeof(int2)/2, cudaMemcpyHostToDevice);
-    delete iuvInternalIdxMap;
-  }
-
   // d*(d-1)/2 - dmin*(dmin-1)/2
   fprintf(stderr, "creating patch data\n");
   devAlloc(&dev_bezPatch, nBasis2*nSubVtx*((degMax + 1)*degMax / 2 - degMin*(degMin - 1) / 2)*sizeof(float));
@@ -496,7 +471,7 @@ void PPM::devPatchInit() {
   for (int d = degMin; d <= degMax; d++) {
     int dOff = d*(d - 1) - degMin*(degMin - 1);
     dOff /= 2;
-    kBezEval<<<blkCnt,blkSize,nTessSM>>>(d, nBasis, nSubVtx, dev_uvIdxMap, &dev_bezPatch[dOff*nSubVtx*nBasis2], &dev_wgtPatch[dOff*nSubVtx]);
+    kBezEval<<<blkCnt,blkSize,nTessSM>>>(d, nBasis, nSub, nSubVtx, &dev_bezPatch[dOff*nSubVtx*nBasis2], &dev_wgtPatch[dOff*nSubVtx]);
     checkCUDAError("kBezEval", __LINE__);
   }
   
@@ -529,11 +504,11 @@ void PPM::devTessInit() {
   thrust::copy(order_itr, order_itr+nHe, heTessIdx_ptr);
   thrust::sort_by_key(order_vec.begin(), order_vec.end(), heTessIdx_ptr);
   
-  blkSize.x = 64;
+  blkSize.x = 32;
   blkSize.y = 16;
   blkCnt.x = (nFace + blkSize.x - 1) / blkSize.x;
   blkCnt.y = (nSubVtx + blkSize.y - 1) / blkSize.y;
-  kTessEdges<<<blkCnt, blkSize>>>(nVtx, nHe, nFace, nSub, dev_heFaces, dev_heTessIdx, dev_iuvIdxMap, dev_tessIdx);
+  kTessEdges<<<blkCnt, blkSize>>>(nVtx, nHe, nFace, nSub, dev_heFaces, dev_heTessIdx, dev_tessIdx);
   checkCUDAError("kTessEdges", __LINE__);
  
   thrust::copy(order_itr, order_itr+nHe, order_vec.begin());
@@ -553,7 +528,7 @@ void PPM::devTessInit() {
 void PPM::devInit() {
 }
 
-float PPM::update(int clickIdx, float clickForce, float dt) {
+float PPM::update(int clickIdx, const glm::vec3 &clickForce, float dt) {
   if (!isBuilt)
     return 0.0f;
 
@@ -567,6 +542,7 @@ float PPM::update(int clickIdx, float clickForce, float dt) {
 
   // generate/update bezier coefficients
   updateCoeff(clickIdx, clickForce, dt);
+  updateRigidBody(clickIdx, clickForce, dt);
 
   // calculate new vertex positions
   if (useVisualize) {
@@ -583,7 +559,7 @@ float PPM::update(int clickIdx, float clickForce, float dt) {
     blkCnt.y = ((nSub-1)*(nSub-2)/2 + blkDim.y - 1) / blkDim.y;
     blkCnt.z = (PPM_NVARS + blkDim.z - 1) / blkDim.z;
     kTessVtx_Face<<<blkCnt, blkDim>>>(nVtx, nFace, nSub, nBasis2,
-      dev_heFaces, dev_bezPatch, dev_wgtPatch, dev_coeff, dev_iuvInternalIdxMap, dev_tessVtx);
+      dev_heFaces, dev_bezPatch, dev_wgtPatch, dev_coeff, dev_tessVtx);
     checkCUDAError("kTessVtx_Face", __LINE__);
   }
   

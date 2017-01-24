@@ -7,6 +7,7 @@
 
 #include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/euler_angles.hpp>
 
 #include <cuda_runtime.h>
@@ -31,7 +32,7 @@ class PpmCanvas : public nanogui::GLCanvas {
       glGetIntegerv(GL_BLEND_DST_RGB, &oldBlendDst);
       glBlendFunc(GL_ONE, GL_ZERO);
       glEnable(GL_DEPTH_TEST);
-      ppm->draw(shader, nullptr);
+      ppm->draw(shader);
       glDisable(GL_DEPTH_TEST);
       glBlendFunc(oldBlendSrc, oldBlendDst);
     }
@@ -218,12 +219,13 @@ void PpmGui::click(int x, int y) {
   glm::vec3 dx = glm::cross(dz, up);
   glm::vec3 dy = glm::cross(dx, dz);
 
-
   float vx = float(x) / canvas->width();
   float vy = float(y) / canvas->height();
 
-  glm::vec3 dir = glm::normalize(dz + tanf(fovx/2)*(2.0f*vx-1)*dx + tanf(fovy/2)*(1.0f - 2.0f*vy)*dy);
-  clickIdx = ppm->intersect(camPos, dir);
+  clickDir = glm::normalize(dz + tanf(fovx/2)*(2.0f*vx-1)*dx + tanf(fovy/2)*(1.0f - 2.0f*vy)*dy);
+  clickIdx = ppm->intersect(camPos, clickDir);
+
+  printf("click %f %f %f %d\n", clickDir.x, clickDir.y, clickDir.z, clickIdx);
 }
 
 void PpmGui::rebuild() {
@@ -239,17 +241,17 @@ void PpmGui::updateCamera() {
   camPos.x = zoom * cos(yAngle) * sin(xAngle);
   camPos.y = zoom * sin(yAngle);
   camPos.z = zoom * cos(yAngle) * cos(xAngle);
-
-  right = glm::vec3(sin(xAngle - M_PI/2), 0, cos(xAngle - M_PI/2));
+ 
+  right = -glm::vec3(sin(xAngle - M_PI/2), 0, cos(xAngle - M_PI/2));
   up = glm::normalize(glm::cross(right, -camPos));
+  
 
-
-  glm::mat4 projection = glm::perspective(fovy, float(canvas->width()) / float(canvas->height()), zNear, zFar);
-  glm::mat4 view = glm::lookAt(camPos, glm::vec3(0,0,0), up);
-  mvp = projection*view;
-
-  shader->setUniform("model", projection*view);
-  shader->setUniform("invTrModel", glm::inverse(glm::transpose(projection*view)));
+  projection = glm::perspective(fovy, float(canvas->width()) / float(canvas->height()), zNear, zFar);
+  view = glm::lookAt(camPos, glm::vec3(0,0,0), up);
+  mvp = projection*view*ppm->model;
+  
+  shader->setUniform("model", mvp);
+  shader->setUniform("invTrModel", glm::inverse(glm::transpose(mvp)));
   shader->setUniform("CamDir", glm::normalize(-camPos));
 }
 
@@ -268,12 +270,16 @@ bool PpmGui::resizeEvent(const nanogui::Vector2i &size) {
 }
 
 void PpmGui::draw(NVGcontext *ctx) {
+
   float currentTime = glfwGetTime();
   float dt = currentTime - prevTime;
   prevTime = currentTime;
-  ppmTime += ppm->update(clickIdx, fClick, dt);
+  ppmTime += ppm->update(clickIdx, fClick*clickDir, dt);
   clickIdx = -1;
-
+  
+  mvp = projection*view*ppm->model;
+  shader->setUniform("model", mvp);
+  shader->setUniform("invTrModel", glm::inverse(glm::transpose(mvp)));
   Screen::draw(ctx);
   
   // perform timing

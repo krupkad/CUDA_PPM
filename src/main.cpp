@@ -29,14 +29,14 @@ int main(int argc, char *argv[]) {
         printf("%d -> ", nSamp);
         try {
           ppm->useTessSM = false;
-          float dt = ppm->update(-1, 0.0f,.01f);
+          float dt = ppm->update(-1, glm::vec3(0.0f),.01f);
           printf("%f ", dt);
         } catch (const std::exception &e) {
           printf("%s ", e.what());
         }
         try {
           ppm->useTessSM = true;
-          float dt = ppm->update(-1, 0.0f,.01f);
+          float dt = ppm->update(-1, glm::vec3(0.0f),.01f);
           printf("%f\n", dt);
         } catch (const std::exception &e) {
           printf("%s\n", e.what());
@@ -60,14 +60,14 @@ int main(int argc, char *argv[]) {
         printf("%d -> ", nBasis);
         try {
           ppm->useTessSM = false;
-          float dt = ppm->update(-1, 0.0f,.01f);
+          float dt = ppm->update(-1, glm::vec3(0.0f),.01f);
           printf("%f ", dt);
         } catch (const std::exception &e) {
           printf("%s ", e.what());
         }
         try {
           ppm->useTessSM = true;
-          float dt = ppm->update(-1, 0.0f,.01f);
+          float dt = ppm->update(-1, glm::vec3(0.0f),.01f);
           printf("%f\n", dt);
         } catch (const std::exception &e) {
           printf("%s\n", e.what());
@@ -93,14 +93,14 @@ int main(int argc, char *argv[]) {
         printf("%d -> ", nSub);
         try {
           ppm->useTessSM = false;
-          float dt = ppm->update(-1, 0.0f,.01f);
+          float dt = ppm->update(-1, glm::vec3(0.0f),.01f);
           printf("%f ", dt);
         } catch (const std::exception &e) {
           printf("%s ", e.what());
         }
         try {
           ppm->useTessSM = true;
-          float dt = ppm->update(-1, 0.0f,.01f);
+          float dt = ppm->update(-1, glm::vec3(0.0f),.01f);
           printf("%f\n", dt);
         } catch (const std::exception &e) {
           printf("%s\n", e.what());
@@ -119,7 +119,7 @@ int main(int argc, char *argv[]) {
       nSamp = 4;
       nSub = (1 << atoi(argv[3]));
       ppm->rebuild(fName, nBasis, nSamp, nSub);
-      ppm->update(-1, 0.0f,.1f);
+      ppm->update(-1, glm::vec3(0.0f),.1f);
 
       float dt = 0, t;
       float2 uv;

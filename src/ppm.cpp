@@ -27,7 +27,10 @@ PPM::PPM(bool glVis) :
   isBuilt(false),
   kSelf(10.0f),
   kDamp(1.5f),
-  kNbr(10.0f)
+  kNbr(10.0f),
+  rbRot(1.0f, 0.0f, 0.0f, 0.0f),
+  rbAngMom(0.0f),
+  rbPos(0.0f)
 {}
 
 PPM::~PPM() {
@@ -318,7 +321,7 @@ void PPM::visInit() {
   glBindVertexArray(0);
 }
 
-void PPM::draw(Shader *vShader, Shader *tShader) {
+void PPM::draw(Shader *vShader) {
   if (!isBuilt)
     return;
   

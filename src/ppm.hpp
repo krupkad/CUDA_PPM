@@ -18,6 +18,7 @@
 #include <cuda_gl_interop.h>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "shader.hpp"
 
@@ -49,8 +50,8 @@ class PPM {
 
     void rebuild(const char *fName, int nBasis, int nGrid, int nSub);
 
-    float update(int clickIdx, float clickForce, float dt);
-    void draw(Shader *vShader, Shader *tShader);
+    float update(int clickIdx, const glm::vec3 &clickForce, float dt);
+    void draw(Shader *vShader);
 	
     int intersect(const glm::vec3 &p0, const glm::vec3 &dir);
 
@@ -73,6 +74,7 @@ class PPM {
 
     // physics attributes
     float kSelf, kNbr, kDamp;
+    glm::mat4 model;
   private:
     // PPM properties
     int nBasis, nGrid, nBasis2, nGrid2;
@@ -93,9 +95,6 @@ class PPM {
     HeData *dev_heLoops, *dev_heFaces;
     float *dev_samp, *dev_coeff;
     float *dev_bezPatch, *dev_wgtPatch;
-    float2 *dev_uvIdxMap;
-    int2 *dev_iuvIdxMap;
-    int2 *dev_iuvInternalIdxMap;
     float *dev_tessWgt;
     int *dev_tessIdx;
     int *dev_heTessIdx;
@@ -118,6 +117,12 @@ class PPM {
     glm::vec3 cm;
     float mass;
 
+    // rigid body attributes
+    glm::quat rbRot;
+    glm::vec3 rbPos;
+    glm::vec3 rbAngMom;
+    glm::vec3 rbForce, rbTorque;
+
     bool objRead(const char *fName);
     bool objReadVtx(std::istream &fStream);
     bool objReadFace(std::istream &fStream);
@@ -135,8 +140,8 @@ class PPM {
 
     void genSampTex();
     void genCoeff();
-    void updateCoeff(int clickIdx, float clickForce, float dt);
-    
+    void updateCoeff(int clickIdx, const glm::vec3 &clickForce, float dt);
+    void updateRigidBody(int clickIdx, const glm::vec3 &clickForce, float dt);
     std::vector<void*> allocList;
     template <typename T>
     void devAlloc(T **ptr, size_t size) {
