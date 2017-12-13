@@ -27,21 +27,16 @@ class PpmCanvas : public nanogui::GLCanvas {
     {}
 
     virtual void drawGL() override {
+
       int oldBlendSrc, oldBlendDst;
       glGetIntegerv(GL_BLEND_SRC_RGB, &oldBlendSrc);
       glGetIntegerv(GL_BLEND_DST_RGB, &oldBlendDst);
       glBlendFunc(GL_ONE, GL_ZERO);
       glEnable(GL_DEPTH_TEST);
       ppm->draw(shader);
+
       glDisable(GL_DEPTH_TEST);
       glBlendFunc(oldBlendSrc, oldBlendDst);
-    }
-    
-    virtual bool mouseButtonEvent(const nanogui::Vector2i &pos, int button, bool down, int mods) override {
-      if (down) {
-        gui->click(pos[0] - position()[0], pos[1]- position()[1]);
-      }
-      return true;
     }
 
   private:
@@ -58,16 +53,14 @@ PpmGui::PpmGui(int w, int h) :
     fovy(M_PI / 4), zNear(0.1), zFar(100.0),
     yAngle(0), xAngle(0), zoom(5.0),
     ppmTime(0.0), fpsTime(0.0), nbFrames(0),
-    fName(""), nBasis(4), nSamp(4), nSub(2),
-    fClick(5.0f),
-    clickIdx(-1)
+    fName(""), nBasis(4), nSamp(4), nSub(2)
 {
   using namespace nanogui;
 
   printf("PpmGui: creating window\n");
   Widget *window = new Window(this, "");
   window->setPosition(Vector2i(0,0));
-  window->setLayout(new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 5)); 
+  window->setLayout(new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 5));
 
   printf("PpmGui: initialize glew\n");
   glewExperimental = GL_TRUE;
@@ -99,16 +92,16 @@ PpmGui::PpmGui(int w, int h) :
   CheckBox *chkFill = new CheckBox(tools, "Show Surface");
   chkFill->setChecked(ppm->visFill);
   chkFill->setCallback([this](bool value) { ppm->visFill = value; });
- 
+
   new Label(tools, "nBasis");
   IntBox<int> *c3 = new IntBox<int>(tools, nBasis);
   new Label(tools, "nSamp");
   IntBox<int> *c4 = new IntBox<int>(tools, nSamp);
   new Label(tools, "nSub");
   IntBox<int> *c5 = new IntBox<int>(tools, nSub);
-  
+
   c3->setMinValue(3);
-  c3->setCallback([this,c4](int value) { 
+  c3->setCallback([this,c4](int value) {
     nBasis = value;
     nSamp = std::max(nBasis, nSamp);
     c4->setValue(nSamp);
@@ -117,66 +110,59 @@ PpmGui::PpmGui(int w, int h) :
   });
   c3->setEditable(true);
   c3->setSpinnable(true);
-  
+
   c4->setMinValue(nBasis);
-  c4->setCallback([this](int value) { 
+  c4->setCallback([this](int value) {
     nSamp = value;
     rebuild();
   });
   c4->setEditable(true);
   c4->setSpinnable(true);
-  
+
   c5->setMinValue(1);
-  c5->setCallback([this](int value) { 
+  c5->setCallback([this](int value) {
     nSub = value;
     rebuild();
   });
   c5->setEditable(true);
   c5->setSpinnable(true);
-   
+
   new Label(tools, "kSelf");
   FloatBox<float> *f1 = new FloatBox<float>(tools, ppm->kSelf);
   new Label(tools, "kDamp");
   FloatBox<float> *f2 = new FloatBox<float>(tools, ppm->kDamp);
   new Label(tools, "kNbr");
   FloatBox<float> *f3 = new FloatBox<float>(tools, ppm->kNbr);
-  new Label(tools, "Click Force");
-  FloatBox<float> *f4 = new FloatBox<float>(tools, fClick);
-  
+
 
   f1->setMinValue(0.0f);
-  f1->setCallback([this](float value) { 
+  f1->setCallback([this](float value) {
     ppm->kSelf = value;
   });
   f1->setEditable(true);
-  
+
   f2->setMinValue(0.0f);
-  f2->setCallback([this](float value) { 
+  f2->setCallback([this](float value) {
     ppm->kDamp = value;
   });
   f2->setEditable(true);
-   
+
   f3->setMinValue(0.0f);
-  f3->setCallback([this](float value) { 
+  f3->setCallback([this](float value) {
     ppm->kNbr = value;
   });
   f3->setEditable(true);
-  
-  f4->setCallback([this](float value) { 
-    fClick = value;
-  });
-  f4->setEditable(true);
-  
+
   new Label(tools, "PPM time (ms)");
   ppmTimeBox = new FloatBox<float>(tools);
-  
+
   new Label(tools, "Base faces");
   ppmBaseFaceBox = new IntBox<int>(tools);
   new Label(tools, "Tess rate (faces/s)");
   ppmTessRateBox = new FloatBox<float>(tools);
-  
+
   Button *fileButton = new Button(tools, "Load OBJ");
-  fileButton->setCallback([this,fileButton] { 
+  fileButton->setCallback([this,fileButton] {
       fName = nanogui::file_dialog({{"obj","Wavefront OBJ"}}, true);
       rebuild();
       fileButton->setTooltip(fName);
@@ -190,7 +176,7 @@ PpmGui::PpmGui(int w, int h) :
   canvas->setBackgroundColor({ 0, 0, 0, 255 });
   canvas->setDrawBorder(false);
   canvas->setSize({ w - tools->width(), h });
- 
+
   printf("PpmGui: performing layout\n");
   performLayout();
 
@@ -212,22 +198,6 @@ void PpmGui::mainLoop() {
   }
 }
 
-void PpmGui::click(int x, int y) {
-  float ratio = float(canvas->width())/canvas->height();
-  float fovx = atan(tan(fovy) * ratio);
-  glm::vec3 dz = glm::normalize(-camPos);
-  glm::vec3 dx = glm::cross(dz, up);
-  glm::vec3 dy = glm::cross(dx, dz);
-
-  float vx = float(x) / canvas->width();
-  float vy = float(y) / canvas->height();
-
-  clickDir = glm::normalize(dz + tanf(fovx/2)*(2.0f*vx-1)*dx + tanf(fovy/2)*(1.0f - 2.0f*vy)*dy);
-  clickIdx = ppm->intersect(camPos, clickDir);
-
-  printf("click %f %f %f %d\n", clickDir.x, clickDir.y, clickDir.z, clickIdx);
-}
-
 void PpmGui::rebuild() {
   if (fName.empty())
     return;
@@ -241,15 +211,15 @@ void PpmGui::updateCamera() {
   camPos.x = zoom * cos(yAngle) * sin(xAngle);
   camPos.y = zoom * sin(yAngle);
   camPos.z = zoom * cos(yAngle) * cos(xAngle);
- 
+
   right = -glm::vec3(sin(xAngle - M_PI/2), 0, cos(xAngle - M_PI/2));
   up = glm::normalize(glm::cross(right, -camPos));
-  
+
 
   projection = glm::perspective(fovy, float(canvas->width()) / float(canvas->height()), zNear, zFar);
   view = glm::lookAt(camPos, glm::vec3(0,0,0), up);
   mvp = projection*view*ppm->model;
-  
+
   shader->setUniform("model", mvp);
   shader->setUniform("invTrModel", glm::inverse(glm::transpose(mvp)));
   shader->setUniform("CamDir", glm::normalize(-camPos));
@@ -258,14 +228,14 @@ void PpmGui::updateCamera() {
 bool PpmGui::resizeEvent(const nanogui::Vector2i &size) {
   if (Screen::resizeEvent(size))
     return true;
-  
+
   performLayout();  // to recalculate toolbar width
   canvas->setSize({ size[0] - tools->width(), size[1] });
   xSize = size[0];
   ySize = size[1];
   performLayout();
   updateCamera();
-  
+
   return true;
 }
 
@@ -274,14 +244,13 @@ void PpmGui::draw(NVGcontext *ctx) {
   float currentTime = glfwGetTime();
   float dt = currentTime - prevTime;
   prevTime = currentTime;
-  ppmTime += ppm->update(clickIdx, fClick*clickDir, dt);
-  clickIdx = -1;
-  
+  ppmTime += ppm->update(dt);
+
   mvp = projection*view*ppm->model;
   shader->setUniform("model", mvp);
   shader->setUniform("invTrModel", glm::inverse(glm::transpose(mvp)));
   Screen::draw(ctx);
-  
+
   // perform timing
   nbFrames++;
   if (currentTime - fpsTime >= 1.0) {
@@ -324,7 +293,7 @@ bool PpmGui::keyboardEvent(int key, int scancode, int action, int modifiers) {
     updateCamera();
     return true;
   }
-  
+
   if (key == GLFW_KEY_LEFT_BRACKET && action == GLFW_PRESS) {
     zoom *= 1.1;
     updateCamera();

@@ -1,4 +1,4 @@
-cuda_add_library(ppm STATIC
+cuda_add_library(ppm
     "ppm_cuda.cu"
     "phys.cu"
     "ppm.cpp"
@@ -7,6 +7,7 @@ cuda_add_library(ppm STATIC
     "util/math.hpp"
     "util/error.hpp"
     "bezier.hpp"
+    STATIC
     OPTIONS -lineinfo -std=c++11 -arch=sm_50
 )
 

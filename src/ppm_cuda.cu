@@ -184,7 +184,7 @@ __global__ void kTessVtx_Face(int nVtx, int nFace, int nSub, int nBasis2,
   int nSubVtx = (nSub+1)*(nSub+2)/2;
   if (fIdx >= nFace || uvIdx >= (nSub-1)*(nSub-2)/2 || dataIdx >= PPM_NVARS)
     return;
-    
+
   int2 uv;
   fIuvInternalIdxMap(uvIdx,uv);
   const HeData &he0 = heFaces[3 * fIdx + 0];
@@ -221,9 +221,9 @@ __global__ void kTessVtx_Edge(int nVtx, int nHe, int nSub, int nBasis2,
 
 
 __global__ void kTessVtx_Vtx(int nVtx, int nSub,  int nBasis2,
-                        const HeData *heLoops, const int2 *vBndList, 
+                        const HeData *heLoops, const int2 *vBndList,
                         const float *bezData, const float *wgtData, const float *coeff,
-                        float *vDataOut) {
+                        float *vDataOut, float *vList) {
   int vIdx = blockIdx.x * blockDim.x + threadIdx.x;
   int dataIdx = blockIdx.y * blockDim.y + threadIdx.y;
   if (vIdx >= nVtx || dataIdx >= PPM_NVARS)
@@ -231,13 +231,14 @@ __global__ void kTessVtx_Vtx(int nVtx, int nSub,  int nBasis2,
 
   const HeData &he = heLoops[vBndList[vIdx].x];
   int dIdx = he.bezOff*(nSub+1)*(nSub+2)/2;
-  
+
   const float *bez = &bezData[dIdx*nBasis2];
   float wgt = wgtData[dIdx], res;
   for (int i = 0; i < nBasis2; i++)
     res += wgt * bez[i] * coeff[i + (he.src + dataIdx * nVtx) * nBasis2];
 
   vDataOut[PPM_NVARS*vIdx + dataIdx] = res / wgt;
+  vList[PPM_NVARS*vIdx + dataIdx] = res / wgt;
 }
 
 __global__ void kGetNormals(int nHe, const HeData *heLoops, float *vData) {
@@ -267,14 +268,14 @@ __device__ inline int tessGetIdx(int u, int v, const HeData *heFaces, const int 
   int heIdx2 = heTessOrder[3*fIdx+1];
   int heIdx3 = heTessOrder[3*fIdx+2];
   int w = nSub-u-v;
-  
+
   if (u == 0 && v == 0)
     return nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1)/2 + he0.src;
   if (w == 0 && v == 0)
     return nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1)/2 + he1.src;
   if (u == 0 && w == 0)
     return nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1)/2 + he2.src;
-  
+
   if (v == 0) {
     if (heIdx1 < nHe/2)
       return nFace*(nSub-1)*(nSub-2)/2 + heIdx1*(nSub-1) + u-1;
@@ -293,9 +294,9 @@ __device__ inline int tessGetIdx(int u, int v, const HeData *heFaces, const int 
     else
       return nFace*(nSub-1)*(nSub-2)/2 + (nHe-heIdx3-1)*(nSub-1) + v-1;
   }
-  
+
   return fIdx*(nSub-1)*(nSub-2)/2 + UV_IDX(u-1,v-1);
-    
+
 }
 
 __global__ void kTessEdges(int nVtx, int nHe, int nFace, int nSub,
@@ -436,7 +437,7 @@ void PPM::devMeshInit() {
   // populate the loops
   fprintf(stderr, "sorting loops\n");
   getHeLoops();
-  
+
   fprintf(stderr, "uploading mesh data\n");
   devAlloc(&dev_heLoops, nHe*sizeof(HeData));
   cudaMemcpy(dev_heLoops, &heLoops[0], nHe*sizeof(HeData), cudaMemcpyHostToDevice);
@@ -446,7 +447,7 @@ void PPM::devMeshInit() {
   cudaMemcpy(dev_vBndList, &vBndList[0], nVtx*sizeof(int2), cudaMemcpyHostToDevice);
   devAlloc(&dev_vList, PPM_NVARS*nVtx*sizeof(float));
   cudaMemcpy(dev_vList, &vList[0],  PPM_NVARS*nVtx*sizeof(float), cudaMemcpyHostToDevice);
-  
+
   // recalculate normals
   dim3 blkDim(256);
   dim3 blkCnt((nHe + blkDim.x - 1)/blkDim.x);
@@ -474,7 +475,7 @@ void PPM::devPatchInit() {
     kBezEval<<<blkCnt,blkSize,nTessSM>>>(d, nBasis, nSub, nSubVtx, &dev_bezPatch[dOff*nSubVtx*nBasis2], &dev_wgtPatch[dOff*nSubVtx]);
     checkCUDAError("kBezEval", __LINE__);
   }
-  
+
   fprintf(stderr, "creating sample data\n");
   if (canUseTexObjs) {
     genSampTex();
@@ -491,7 +492,7 @@ void PPM::devTessInit() {
   } else {
     devAlloc(&dev_tessIdx, 3*nFace*nSubFace*sizeof(int));
   }
-  
+
   dim3 blkSize(1024), blkCnt((nHe +1023) / 1024);
   devAlloc(&dev_heTessIdx, nHe*sizeof(int));
   kGetHeTessIdx<<<blkCnt, blkSize>>>(nHe, dev_heFaces, dev_heTessIdx);
@@ -503,21 +504,21 @@ void PPM::devTessInit() {
   thrust::sort_by_key(heTessIdx_ptr, heTessIdx_ptr+nHe, order_vec.begin());
   thrust::copy(order_itr, order_itr+nHe, heTessIdx_ptr);
   thrust::sort_by_key(order_vec.begin(), order_vec.end(), heTessIdx_ptr);
-  
+
   blkSize.x = 32;
   blkSize.y = 16;
   blkCnt.x = (nFace + blkSize.x - 1) / blkSize.x;
   blkCnt.y = (nSubVtx + blkSize.y - 1) / blkSize.y;
   kTessEdges<<<blkCnt, blkSize>>>(nVtx, nHe, nFace, nSub, dev_heFaces, dev_heTessIdx, dev_tessIdx);
   checkCUDAError("kTessEdges", __LINE__);
- 
+
   thrust::copy(order_itr, order_itr+nHe, order_vec.begin());
   thrust::sort_by_key(heTessIdx_ptr, heTessIdx_ptr+nHe, order_vec.begin());
   thrust::copy(order_vec.begin(), order_vec.end(), heTessIdx_ptr);
 
   if (useVisualize)
     cudaGraphicsUnmapResources(1, &dev_vboTessIdx, 0);
-  
+
   if (!useVisualize)
     devAlloc(&dev_tessVtx, PPM_NVARS*(nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1)/2 + nVtx)*sizeof(float));
   devAlloc(&dev_tessWgt, nFace*nSubVtx*sizeof(float));
@@ -528,7 +529,7 @@ void PPM::devTessInit() {
 void PPM::devInit() {
 }
 
-float PPM::update(int clickIdx, const glm::vec3 &clickForce, float dt) {
+float PPM::update(float dt) {
   if (!isBuilt)
     return 0.0f;
 
@@ -540,21 +541,22 @@ float PPM::update(int clickIdx, const glm::vec3 &clickForce, float dt) {
   dim3 blkDim;
   dim3 blkCnt;
 
-  // generate/update bezier coefficients
-  updateCoeff(clickIdx, clickForce, dt);
-  updateRigidBody(clickIdx, clickForce, dt);
-
   // calculate new vertex positions
   if (useVisualize) {
     size_t nBytes;
     cudaGraphicsMapResources(1, &dev_vboTessVtx, 0);
     cudaGraphicsResourceGetMappedPointer((void**)&dev_tessVtx, &nBytes, dev_vboTessVtx);
+    cudaGraphicsMapResources(1, &dev_vboVtx, 0);
+    cudaGraphicsResourceGetMappedPointer((void**)&dev_vList, &nBytes, dev_vboVtx);
   }
 
+  updateSb(dt);
+  updateRbRot(dt);
+
   if (nSub > 2) {
-    blkDim.x = 16;
-    blkDim.y = 4;
-    blkDim.z = 2;
+    blkDim.x = 8;
+    blkDim.y = 16;
+    blkDim.z = 1;
     blkCnt.x = (nFace + blkDim.x - 1) / blkDim.x;
     blkCnt.y = ((nSub-1)*(nSub-2)/2 + blkDim.y - 1) / blkDim.y;
     blkCnt.z = (PPM_NVARS + blkDim.z - 1) / blkDim.z;
@@ -562,11 +564,11 @@ float PPM::update(int clickIdx, const glm::vec3 &clickForce, float dt) {
       dev_heFaces, dev_bezPatch, dev_wgtPatch, dev_coeff, dev_tessVtx);
     checkCUDAError("kTessVtx_Face", __LINE__);
   }
-  
+
   if (nSub > 1) {
-    blkDim.x = 16;
+    blkDim.x = 32;
     blkDim.y = 4;
-    blkDim.z = 2;
+    blkDim.z = 1;
     blkCnt.x = (nHe/2 + blkDim.x - 1) / blkDim.x;
     blkCnt.y = (nSub-1 + blkDim.y - 1) / blkDim.y;
     blkCnt.z = (PPM_NVARS + blkDim.z - 1) / blkDim.z;
@@ -574,19 +576,23 @@ float PPM::update(int clickIdx, const glm::vec3 &clickForce, float dt) {
       dev_heFaces, dev_heTessIdx, dev_bezPatch, dev_wgtPatch, dev_coeff, dev_tessVtx + PPM_NVARS*nFace*(nSub-1)*(nSub-2)/2);
     checkCUDAError("kTessVtx_Edge", __LINE__);
   }
-  
-  blkDim.x = 32;
-  blkDim.y = 4;
+
+  blkDim.x = 64;
+  blkDim.y = 1;
   blkDim.z = 1;
   blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
   blkCnt.y = (PPM_NVARS + blkDim.y - 1) / blkDim.y;
   blkCnt.z = 1;
   kTessVtx_Vtx<<<blkCnt, blkDim>>>(nVtx, nSub, nBasis2,
-    dev_heLoops, dev_vBndList, dev_bezPatch, dev_wgtPatch, dev_coeff, dev_tessVtx + PPM_NVARS*(nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1)/2));
+    dev_heLoops, dev_vBndList, dev_bezPatch, dev_wgtPatch, dev_coeff, dev_tessVtx + PPM_NVARS*(nFace*(nSub-1)*(nSub-2)/2 + nHe*(nSub-1)/2), dev_vList);
   checkCUDAError("kTessVtx_Vtx", __LINE__);
-  
-  if (useVisualize)
+
+  // generate/update bezier coefficients
+
+  if (useVisualize) {
     cudaGraphicsUnmapResources(1, &dev_vboTessVtx, 0);
+    cudaGraphicsUnmapResources(1, &dev_vboVtx, 0);
+  }
 
   float meas_dt;
   cudaEventRecord(stop, 0);
@@ -594,6 +600,8 @@ float PPM::update(int clickIdx, const glm::vec3 &clickForce, float dt) {
   cudaEventElapsedTime(&meas_dt, start, stop);
   cudaEventDestroy(start);
   cudaEventDestroy(stop);
+
+  // recalculate physics
 
   return meas_dt;
 }

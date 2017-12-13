@@ -50,9 +50,9 @@ class PPM {
 
     void rebuild(const char *fName, int nBasis, int nGrid, int nSub);
 
-    float update(int clickIdx, const glm::vec3 &clickForce, float dt);
+    float update(float dt);
     void draw(Shader *vShader);
-	
+
     int intersect(const glm::vec3 &p0, const glm::vec3 &dir);
 
     // visualization options
@@ -75,6 +75,7 @@ class PPM {
     // physics attributes
     float kSelf, kNbr, kDamp;
     glm::mat4 model;
+
   private:
     // PPM properties
     int nBasis, nGrid, nBasis2, nGrid2;
@@ -111,17 +112,24 @@ class PPM {
 	  unsigned int vboIdx, vboVtx;
 	  unsigned int vboTessIdx, vboTessVtx;
 	  cudaGraphicsResource *dev_vboTessIdx, *dev_vboTessVtx;
-    
+	  cudaGraphicsResource *dev_vboVtx;
+
     // physics data
-    glm::mat3 moi;
-    glm::vec3 cm;
+    float *dev_moi, moi[9];
+    float *dev_cm, cm[3];
+    float *dev_vol, vol;
     float mass;
+
+    float *dev_moi_work, *dev_vol_work, *dev_cm_work;
 
     // rigid body attributes
     glm::quat rbRot;
     glm::vec3 rbPos;
     glm::vec3 rbAngMom;
-    glm::vec3 rbForce, rbTorque;
+    float *dev_rbForce, rbForce[3];
+    float *dev_rbTorque, rbTorque[3];
+    glm::vec3 rbAngVel;
+    float *dev_rbAngVel;
 
     bool objRead(const char *fName);
     bool objReadVtx(std::istream &fStream);
@@ -135,13 +143,13 @@ class PPM {
     void devCoeffInit();
     void devTessInit();
     void physInit();
-    void physTess();
+    void physCalc();
     void cudaProbe();
 
     void genSampTex();
     void genCoeff();
-    void updateCoeff(int clickIdx, const glm::vec3 &clickForce, float dt);
-    void updateRigidBody(int clickIdx, const glm::vec3 &clickForce, float dt);
+    void updateSb(float dt);
+    void updateRbRot(float dt);
     std::vector<void*> allocList;
     template <typename T>
     void devAlloc(T **ptr, size_t size) {

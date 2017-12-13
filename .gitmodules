@@ -1,6 +1,10 @@
 [submodule "external/nanogui"]
 	path = external/nanogui
-	url = https://github.com/wjakob/nanogui
+  url = https://github.com/wjakob/nanogui
+  branch = master
 [submodule "external/lapack"]
 	path = external/lapack
 	url = https://github.com/Reference-LAPACK/lapack
+[submodule "external/glfw"]
+	path = external/glfw
+	url = https://github.com/glfw/glfw
