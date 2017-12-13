@@ -14,6 +14,12 @@
 #include <stdexcept>
 #include <algorithm>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 
 PPM::PPM(bool glVis) :
   useTessSM(false),
@@ -22,7 +28,7 @@ PPM::PPM(bool glVis) :
   useVisualize(glVis),
   visFill(true),
   visSkel(true),
-  visDbgNormals(true),
+  visDbgNormals(false),
   inFile(""),
   isBuilt(false),
   kSelf(10.0f),
@@ -30,7 +36,8 @@ PPM::PPM(bool glVis) :
   kNbr(10.0f),
   rbRot(1.0f, 0.0f, 0.0f, 0.0f),
   rbAngMom(0.0f),
-  rbPos(0.0f)
+  rbPos(0.0f),
+  mass(1000.0f)
 {}
 
 PPM::~PPM() {
@@ -51,8 +58,14 @@ void PPM::rebuild(const char *fName, int nBasis, int nGrid, int nSub) {
     visFree();
     devFree();
     isBuilt = false;
+
+    rbRot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    rbAngMom = glm::vec3(0.0f, 0.0f, 0.0f);
+    rbPos = glm::vec3(0.0f);
+    rbAngVel = glm::vec3(0.0f);
+
   }
-  
+
   if (!objRead(fName)) {
     fprintf(stderr, "couldn't open file %s\n", fName);
     return;
@@ -73,14 +86,15 @@ void PPM::rebuild(const char *fName, int nBasis, int nGrid, int nSub) {
 
   // calculate mesh physics properties
   physInit();
+  rbAngMom.y = 10.0f*mass;
 
   // initialize visualization data
   if (useVisualize) {
     visInit();
     fprintf(stderr, "vis done\n");
   }
- 
-  // calculate PPM data 
+
+  // calculate PPM data
   this->nBasis = nBasis;
   this->nGrid = nGrid;
   this->nBasis2 = nBasis*nBasis;
@@ -115,7 +129,7 @@ void PPM::getHeLoops() {
       if (!hasPred)
         break;
     }
-    if (first != loop.size()) 
+    if (first != loop.size())
       std::swap(loop[first],loop[0]);
 
     // finish the chain
@@ -280,6 +294,8 @@ void PPM::visInit() {
   fprintf(stderr, "loading vidx vbo\n");
   glBindBuffer(GL_ARRAY_BUFFER, vboVtx);
   glBufferData(GL_ARRAY_BUFFER, PPM_NVARS * nVtx*sizeof(float), &vList[0], GL_STATIC_DRAW);
+  cudaGraphicsGLRegisterBuffer(&dev_vboVtx, vboVtx, cudaGraphicsMapFlagsNone);
+  checkCUDAError("cudaGraphicsGLRegisterBuffer", __LINE__);
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, PPM_NVARS * sizeof(float), (const void*)0);
   glEnableVertexAttribArray(1);
@@ -290,6 +306,7 @@ void PPM::visInit() {
   fprintf(stderr, "loading fidx vbo\n");
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboIdx);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, 3 * nFace*sizeof(int), &fList[0], GL_STATIC_DRAW);
+
   //glEnableVertexAttribArray(3);
   //glVertexAttribIPointer(3, GL_INT, 3, 0, (const void*)0);
 
@@ -324,7 +341,7 @@ void PPM::visInit() {
 void PPM::draw(Shader *vShader) {
   if (!isBuilt)
     return;
-  
+
 	if (visSkel) {
 	  glPointSize(1.0f);
 	  vShader->setUniform("uColor", 0.8f, 0.2f, 0.1f);
@@ -333,7 +350,7 @@ void PPM::draw(Shader *vShader) {
     vShader->bindIndexData(vboIdx);
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glDrawElements(GL_TRIANGLES, 3 * nFace, GL_UNSIGNED_INT, 0);
-    
+
     glPointSize(3.0f);
     vShader->setUniform("uColor", 0.2f, 0.1f, 0.8f);
     vShader->setUniform("nShade", false);
@@ -364,39 +381,71 @@ void PPM::visFree() {
   if (!useVisualize)
     return;
 
+  cudaGraphicsUnregisterResource(dev_vboVtx);
+  checkCUDAError("GraphicsUnregisterResource", __LINE__);
   glDeleteBuffers(1,&vboVtx); // vList.size() vertices (3 floats)
   glDeleteBuffers(1,&vboIdx); // vList.size() vertices (3 floats)
+
   cudaGraphicsUnregisterResource(dev_vboTessIdx);
   checkCUDAError("GraphicsUnregisterResource", __LINE__);
   cudaGraphicsUnregisterResource(dev_vboTessVtx);
   checkCUDAError("GraphicsUnregisterResource", __LINE__);
   glDeleteBuffers(1, &vboTessVtx); // vList.size() vertices (3 floats)
   glDeleteBuffers(1, &vboTessIdx); // vList.size() vertices (3 floats)
+
   glDeleteVertexArrays(1, &vaoBase); // vList.size() vertices (3 floats)
   glDeleteVertexArrays(1, &vaoTess); // vList.size() vertices (3 floats)
 }
 
 void PPM::cudaProbe() {
-    int nDevices;
-    cudaGetDeviceCount(&nDevices);
-    if (nDevices <= 0)
-      throw std::runtime_error("No CUDA device detected");
+  int nDevices;
+  cudaGetDeviceCount(&nDevices);
+  if (nDevices <= 0)
+    throw std::runtime_error("No CUDA device detected");
 
-    for (int i = 0; i < nDevices; i++) {
-      cudaDeviceProp prop;
-      cudaGetDeviceProperties(&prop, i);
-      checkCUDAError("cudaGetDeviceProperties", __LINE__);
-      
-      fprintf(stderr, "Device Number: %d\n", i);
-      fprintf(stderr, "  Device name: %s\n", prop.name);
-      fprintf(stderr, "  Compute capability: %d.%d", prop.major, prop.minor);
-      if (prop.major < 3) {
-        fprintf(stderr, " (< 3.0, disabling texSamp)");
-        canUseTexObjs = false;
-      } else {
-        canUseTexObjs = true;
-      }
-      fprintf(stderr, "\n");
+  for (int i = 0; i < nDevices; i++) {
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, i);
+    checkCUDAError("cudaGetDeviceProperties", __LINE__);
+
+    fprintf(stderr, "Device Number: %d\n", i);
+    fprintf(stderr, "  Device name: %s\n", prop.name);
+    fprintf(stderr, "  Compute capability: %d.%d", prop.major, prop.minor);
+    if (prop.major < 3) {
+      fprintf(stderr, " (< 3.0, disabling texSamp)");
+      canUseTexObjs = false;
+    } else {
+      canUseTexObjs = true;
     }
+    fprintf(stderr, "\n");
   }
+}
+
+void PPM::updateRbRot(float dt) {
+
+  // rotation VV1, half-torque appliucation
+  rbAngMom[0] += 0.5f * dt * rbTorque[0];
+  rbAngMom[1] += 0.5f * dt * rbTorque[1];
+  rbAngMom[2] += 0.5f * dt * rbTorque[2];
+  glm::mat3 rot = glm::toMat3(rbRot);
+  glm::mat3 mmoi;
+  memcpy(glm::value_ptr(mmoi), moi, 9*sizeof(float));
+  rbAngVel = rot*glm::inverse(mmoi)*glm::transpose(rot)*rbAngMom / mass;
+
+  // rotation VV1, velocity application
+  float th = glm::length(rbAngVel);
+  if (th > 0.001f) {
+    glm::quat dq = glm::angleAxis(th*dt, rbAngVel/th);
+    rbRot = dq * rbRot;
+  }
+  model = glm::toMat4(rbRot);
+
+  // TODO: proper torque calculation
+  rbTorque[0] = rbTorque[1] = rbTorque[2] = 0.0f;
+
+  // rotation VV1, half-torque
+  rbAngMom[0] += 0.5f * dt * rbTorque[0];
+  rbAngMom[1] += 0.5f * dt * rbTorque[1];
+  rbAngMom[2] += 0.5f * dt * rbTorque[2];
+}
 

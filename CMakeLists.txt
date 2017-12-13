@@ -48,13 +48,21 @@ find_package(CUDA REQUIRED)
 set(CUDA_ATTACH_VS_BUILD_RULE_TO_CUDA_FILE ON)
 set(CUDA_SEPARABLE_COMPILATION ON)
 
+### GLFW options
+set(BUILD_SHARED_LIBS OFF CACHE BOOL " " FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL " " FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL " " FORCE)
+set(GLFW_BUILD_DOCS OFF CACHE BOOL " " FORCE)
+add_subdirectory(external/glfw)
+include_directories(external/glfw)
+
 ### NanoGui options
 set(NANOGUI_BUILD_EXAMPLE OFF CACHE BOOL " " FORCE)
 set(NANOGUI_BUILD_PYTHON  OFF CACHE BOOL " " FORCE)
 set(NANOGUI_INSTALL       OFF CACHE BOOL " " FORCE)
 set(NANOGUI_BUILD_SHARED  OFF CACHE BOOL " " FORCE)
 add_subdirectory(external/nanogui)
-set_property(TARGET glfw glfw_objects nanogui PROPERTY FOLDER "dependencies")
+#set_property(TARGET nanogui PROPERTY FOLDER "dependencies")
 add_definitions(${NANOGUI_EXTRA_DEFS})
 include_directories(external/nanogui/include ${NANOGUI_EXTRA_INCS})
 
@@ -80,6 +88,7 @@ cuda_add_executable(${CMAKE_PROJECT_NAME}
 target_link_libraries(${CMAKE_PROJECT_NAME}
     ppm
     ${CUDA_CUBLAS_LIBRARIES}
+    glfw
     nanogui
     ${NANOGUI_EXTRA_LIBS}
 )

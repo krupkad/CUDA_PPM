@@ -3,166 +3,82 @@
 #include "util/error.hpp"
 #include "util/uvidx.hpp"
 
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/quaternion.hpp>
-#include <glm/gtx/quaternion.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
 #include <iterator>
 #include <algorithm>
 
-__global__ void kCalcInertia(int nFace, const HeData *heFaces, const float *vtxData, glm::mat3 *moiOut, float *massOut, glm::vec3 *cmOut) {
+__global__ void kCalcInertia(int nFace, const HeData *heFaces, const float
+    *vtxData, float *moiOut, float *volOut, float *cmOut) {
   int fIdx = threadIdx.x + blockIdx.x * blockDim.x;
   if (fIdx >= nFace)
     return;
-    
-  extern __shared__ glm::mat3 matSM[];
-  glm::mat3 &C = matSM[0];
-  glm::mat3 &A = matSM[1+threadIdx.x];
-  float *pA = glm::value_ptr(A);
-  float *pC = glm::value_ptr(C);
-  
+
+  extern __shared__ float matSM[];
+  float *pA = &matSM[12*threadIdx.x];
+  float *r = &matSM[12*threadIdx.x + 9];
+
   for (int i = 0; i < 3; i++) {
-    for (int j = 0; j < 3; j++) {
-      pA[3*i + j] = vtxData[PPM_NVARS*heFaces[3*fIdx + i].src + j];
-      if (threadIdx.x == 0) pC[3*i + j] = (i == j) ? (1.0f/60) : (1.0f/120);
-    }
-  }
-  
-  float detA = glm::determinant(A);
-  float *cmPtr = glm::value_ptr(*cmOut);
-  atomicAdd(&cmPtr[fIdx+0], detA*(pA[0]+pA[3]+pA[6])/18.0f);
-  atomicAdd(&cmPtr[fIdx+1], detA*(pA[1]+pA[4]+pA[7])/18.0f);
-  atomicAdd(&cmPtr[fIdx+2], detA*(pA[2]+pA[5]+pA[8])/18.0f);
-  atomicAdd(massOut, detA/6);
-  
-  __syncthreads();
-  float *moiPtr = glm::value_ptr(*moiOut);
-  A = detA * A * C * glm::transpose(A);
-  for (int i = 0; i < 9; i++)
-	  atomicAdd(&moiPtr[i], pA[i]);
+  for (int j = 0; j < 3; j++) {
+    pA[3*i + j] = vtxData[PPM_NVARS*heFaces[3*fIdx + i].src + j];
+  }}
+  r[0] = pA[0] + pA[3] + pA[6];
+  r[1] = pA[1] + pA[4] + pA[7];
+  r[2] = pA[2] + pA[5] + pA[8];
+
+  float detA = pA[0]*(pA[4]*pA[8]-pA[5]*pA[7])
+              - pA[3]*(pA[1]*pA[8]-pA[7]*pA[2])
+              + pA[6]*(pA[1]*pA[5]-pA[2]*pA[4]);
+  atomicAdd(&cmOut[0], detA*r[0]/18.0f);
+  atomicAdd(&cmOut[1], detA*r[1]/18.0f);
+  atomicAdd(&cmOut[2], detA*r[2]/18.0f);
+  atomicAdd(volOut, detA/6.0f);
+
+  detA *= 60.0f*nFace;
+  atomicAdd(&moiOut[0], (r[0]*r[0] + pA[0]*pA[0] + pA[3]*pA[3] + pA[6]*pA[6])/detA);
+  atomicAdd(&moiOut[1], (r[0]*r[1] + pA[0]*pA[1] + pA[3]*pA[4] + pA[6]*pA[7])/detA);
+  atomicAdd(&moiOut[2], (r[0]*r[2] + pA[2]*pA[0] + pA[5]*pA[3] + pA[8]*pA[6])/detA);
+  atomicAdd(&moiOut[3], (r[1]*r[0] + pA[0]*pA[1] + pA[3]*pA[4] + pA[6]*pA[7])/detA);
+  atomicAdd(&moiOut[4], (r[1]*r[1] + pA[1]*pA[1] + pA[4]*pA[4] + pA[7]*pA[7])/detA);
+  atomicAdd(&moiOut[5], (r[1]*r[2] + pA[1]*pA[2] + pA[4]*pA[5] + pA[7]*pA[8])/detA);
+  atomicAdd(&moiOut[6], (r[2]*r[0] + pA[2]*pA[0] + pA[5]*pA[3] + pA[8]*pA[6])/detA);
+  atomicAdd(&moiOut[7], (r[2]*r[1] + pA[1]*pA[2] + pA[4]*pA[5] + pA[7]*pA[8])/detA);
+  atomicAdd(&moiOut[8], (r[2]*r[2] + pA[2]*pA[2] + pA[5]*pA[5] + pA[8]*pA[8])/detA);
 }
 
-__global__ void kCalcTessInertia(int nFace, const int *tessIdx, const float *tessVtx, glm::mat3 *moiOut, float *massOut, glm::vec3 *cmOut) {
-  int fIdx = threadIdx.x + blockIdx.x * blockDim.x;
-  if (fIdx >= nFace)
-    return;
-    
-  extern __shared__ glm::mat3 matSM[];
-  glm::mat3 &C = matSM[0];
-  glm::mat3 &A = matSM[1+threadIdx.x];
-  float *pA = glm::value_ptr(A);
-  float *pC = glm::value_ptr(C);
-  
-  for (int i = 0; i < 3; i++) {
-    for (int j = 0; j < 3; j++) {
-      pA[3*i + j] = tessVtx[PPM_NVARS*tessIdx[3*fIdx + i] + j];
-      if (threadIdx.x == 0) pC[3*i + j] = (i == j) ? (1.0f/60) : (1.0f/120);
-    }
-  }
-  
-  float detA = glm::determinant(A);
-  float *cmPtr = glm::value_ptr(*cmOut);
-  atomicAdd(&cmPtr[fIdx+0], detA*(pA[0]+pA[3]+pA[6])/18.0f);
-  atomicAdd(&cmPtr[fIdx+1], detA*(pA[1]+pA[4]+pA[7])/18.0f);
-  atomicAdd(&cmPtr[fIdx+2], detA*(pA[2]+pA[5]+pA[8])/18.0f);
-  atomicAdd(massOut, detA/6);
-  
-  __syncthreads();
-  float *moiPtr = glm::value_ptr(*moiOut);
-  A = detA * A * C * glm::transpose(A);
-  for (int i = 0; i < 9; i++)
-	atomicAdd(&moiPtr[i], pA[i]);
-}
+void PPM::physCalc() {
+  cudaMemset(dev_moi, 0, 9*sizeof(float));
+  cudaMemset(dev_cm, 0, 3*sizeof(float));
+  cudaMemset(dev_vol, 0, sizeof(float));
 
-__global__ void kCenter(int nVtx, glm::vec3 cm, float *vData) {
-  int vIdx = threadIdx.x + blockDim.x * blockIdx.x;
-  if (vIdx >= nVtx)
-    return;
-  
-  vData[PPM_NVARS*vIdx + 0] -= cm[0];
-  vData[PPM_NVARS*vIdx + 1] -= cm[1];
-  vData[PPM_NVARS*vIdx + 2] -= cm[2];
+  fprintf(stderr, "phys compute\n");
+  dim3 blkDim(256), blkCnt((nFace + 255)/256);
+  int nSM = (blkDim.x) * 12 * sizeof(float);
+  kCalcInertia<<<blkCnt,blkDim,nSM>>>(nFace, dev_heFaces, dev_vList, dev_moi, dev_vol, dev_cm);
+  checkCUDAError("kCalcInertia", __LINE__);
+
+  fprintf(stderr, "phys copy\n");
+  cudaMemcpy(moi, dev_moi, 9*sizeof(float), cudaMemcpyDeviceToHost);
+  cudaMemcpy(cm, dev_cm, 3*sizeof(float), cudaMemcpyDeviceToHost);
+  cudaMemcpy(&vol, dev_vol, sizeof(float), cudaMemcpyDeviceToHost);
+
+  fprintf(stderr, "phys moi finalize\n");
+  float tr = moi[0] + moi[4] + moi[8];
+  for (int i = 0; i < 3; i++) {
+  for (int j = 0; j < 3; j++) {
+    moi[3*i+j] = ((i == j) ? tr : 0.0f) - moi[3*i+j];
+  }}
+
+  fprintf(stderr, "phys result: %f (%f %f %f)\n", vol, cm[0], cm[1], cm[2]);
+  fprintf(stderr, "%f %f %f\n", moi[0], moi[3], moi[6]);
+  fprintf(stderr, "%f %f %f\n", moi[1], moi[4], moi[7]);
+  fprintf(stderr, "%f %f %f\n\n", moi[2], moi[5], moi[8]);
 }
 
 void PPM::physInit() {
   fprintf(stderr, "phys alloc\n");
-  glm::mat3 *dev_moi;
-  cudaMalloc(&dev_moi, sizeof(glm::mat3));
-  cudaMemset(dev_moi, 0, sizeof(glm::mat3));
-  float *dev_mass;
-  cudaMalloc(&dev_mass, sizeof(float));
-  cudaMemset(dev_mass, 0, sizeof(float));
-  glm::vec3 *dev_cm;
-  cudaMalloc(&dev_cm, sizeof(glm::vec3));
-  cudaMemset(dev_cm, 0, sizeof(glm::vec3));
-  
-  fprintf(stderr, "phys compute\n");
-  dim3 blkDim(256), blkCnt((nFace + 255)/256);
-  int nSM = (1+blkDim.x) * sizeof(glm::mat3);
-  kCalcInertia<<<blkCnt,blkDim,nSM>>>(nFace, dev_heFaces, dev_vList, dev_moi, dev_mass, dev_cm);
-  checkCUDAError("kCalcInertia", __LINE__);
-
-  fprintf(stderr, "phys copy\n");
-  cudaMemcpy(&moi, dev_moi, sizeof(glm::mat3), cudaMemcpyDeviceToHost);
-  cudaMemcpy(&cm, dev_cm, sizeof(glm::vec3), cudaMemcpyDeviceToHost);
-  cudaMemcpy(&mass, dev_mass, sizeof(float), cudaMemcpyDeviceToHost);
-
-  fprintf(stderr, "phys recenter\n");
-  kCenter<<<blkCnt,blkDim>>>(nVtx, cm, dev_vList);
-  checkCUDAError("kCenter", __LINE__);
-  cudaMemcpy(&vList[0], dev_vList, PPM_NVARS*nVtx*sizeof(float), cudaMemcpyDeviceToHost);
-  
-  fprintf(stderr, "phys reduce\n");
-  float tr = moi[0][0] + moi[1][1] + moi[2][2];
-  for (int i = 0; i < 3; i++) {
-  for (int j = 0; j < 3; j++) {
-    moi[i][j] = ((i == j) ? tr : 0.0f) - moi[i][j];
-  }}
-  mass *= 1000.0f;
-
-  fprintf(stderr, "phys result: %f (%f %f %f)\n", mass, cm.x, cm.y, cm.z);
-  fprintf(stderr, "%f %f %f\n", moi[0][0], moi[1][0], moi[2][0]);
-  fprintf(stderr, "%f %f %f\n", moi[0][1], moi[1][1], moi[2][1]);
-  fprintf(stderr, "%f %f %f\n\n", moi[0][2], moi[1][2], moi[2][2]);
-  
-  cudaFree(dev_moi);
-  cudaFree(dev_mass);
-  cudaFree(dev_cm);
-}
-
-void PPM::physTess() {
-  fprintf(stderr, "phys alloc\n");
-  glm::mat3 *dev_moi;
-  cudaMalloc(&dev_moi, sizeof(glm::mat3));
-  cudaMemset(dev_moi, 0, sizeof(glm::mat3));
-  float *dev_mass;
-  cudaMalloc(&dev_mass, sizeof(float));
-  cudaMemset(dev_mass, 0, sizeof(float));
-  glm::vec3 *dev_cm;
-  cudaMalloc(&dev_cm, sizeof(glm::vec3));
-  cudaMemset(dev_cm, 0, sizeof(glm::vec3));
-  
-  fprintf(stderr, "phys compute\n");
-  dim3 blkDim(256), blkCnt((nFace + 255)/256);
-  int nSM = (1+blkDim.x) * sizeof(glm::mat3);
-  kCalcTessInertia<<<blkCnt,blkDim,nSM>>>(nFace, dev_tessIdx, dev_tessVtx, dev_moi, dev_mass, dev_cm);
-  
-  cudaMemcpy(&moi, dev_moi, sizeof(glm::mat3), cudaMemcpyDeviceToHost);
-  cudaMemcpy(&cm, dev_cm, sizeof(glm::vec3), cudaMemcpyDeviceToHost);
-  cudaMemcpy(&mass, dev_mass, sizeof(float), cudaMemcpyDeviceToHost);
-
-  fprintf(stderr, "phys reduce\n");
-  moi -= mass*glm::outerProduct(cm,cm);
-  moi = glm::mat3(moi[0][0] + moi[1][1] + moi[2][2]) - moi;
-  fprintf(stderr, "phys result: %f (%f %f %f)\n", mass, cm.x, cm.y, cm.z);
-  fprintf(stderr, "%f %f %f\n", moi[0][0], moi[1][0], moi[2][0]);
-  fprintf(stderr, "%f %f %f\n", moi[0][1], moi[1][1], moi[2][1]);
-  fprintf(stderr, "%f %f %f\n\n", moi[0][2], moi[1][2], moi[2][2]);
-  
-  cudaFree(dev_moi);
-  cudaFree(dev_mass);
-  cudaFree(dev_cm);
+  devAlloc(&dev_moi, 9*sizeof(float));
+  devAlloc(&dev_cm, 3*sizeof(float));
+  devAlloc(&dev_vol, sizeof(float));
+  physCalc();
 }
 
 __global__ void kMeshIntersect(bool exec, bool biDir,
@@ -172,12 +88,12 @@ __global__ void kMeshIntersect(bool exec, bool biDir,
   int fSubIdx = threadIdx.x + blockIdx.x * blockDim.x;
   if (fSubIdx >= nSubFace)
     return;
-  
+
   vTessIdx = &vTessIdx[3*fSubIdx];
   const float *v0 = &vTessData[PPM_NVARS*vTessIdx[0]];
   const float *v1 = &vTessData[PPM_NVARS*vTessIdx[1]];
   const float *v2 = &vTessData[PPM_NVARS*vTessIdx[2]];
-  
+
   float e1[3], e2[3];
   for (int i = 0; i < 3; i++) {
     e1[i] = v1[i] - v0[i];
@@ -188,27 +104,27 @@ __global__ void kMeshIntersect(bool exec, bool biDir,
   p[0] = dir[1]*e2[2] - dir[2]*e2[1];
   p[1] = dir[2]*e2[0] - dir[0]*e2[2];
   p[2] = dir[0]*e2[1] - dir[1]*e2[0];
-  
+
   float idet = e1[0]*p[0] + e1[1]*p[1] + e1[2]*p[2];
   if (idet > -1e-5 && idet < 1e-5)
     return;
   idet = 1.0f/idet;
-  
+
   float T[3];
   for (int i = 0; i < 3; i++)
     T[i] = p0[i] - v0[i];
   float u = idet*(p[0]*T[0] + p[1]*T[1] + p[2]*T[2]);
   if (u < 0 || u > 1)
     return;
-  
-  
+
+
   p[0] = T[1]*e1[2] - T[2]*e1[1];
   p[1] = T[2]*e1[0] - T[0]*e1[2];
   p[2] = T[0]*e1[1] - T[1]*e1[0];
   float v = idet*(dir[0]*p[0] + dir[1]*p[1] + dir[2]*p[2]);
   if (v < 0 || u+v > 1)
     return;
-  
+
   float t = idet*(e2[0]*p[0] + e2[1]*p[1] + e2[2]*p[2]);
   if (biDir || (t > 1e-5)) {
     if (exec) {
@@ -283,35 +199,21 @@ __global__ void kPhysNeighbor(int nVtx, const HeData *heLoops, const int2 *vBndL
   dv[9*vIdx + 8] = vSM[2] - kDamp*dv[9*vIdx + 5];
 }
 
-__global__ void kPhysVerlet2(int nVtx, float *dv, float dt) {
+__global__ void kPhysVerlet2(int nVtx, float *dv, float mass, const int2 *vBndList, float dt)  {
   int vIdx = threadIdx.x + blockIdx.x * blockDim.x;
   if (vIdx >= nVtx)
     return;
 
+  const int2 &bnd = vBndList[vIdx];
+  mass *= (bnd.y - bnd.x);
+
   dv = &dv[9*vIdx];
-  dv[3] += 0.5f*dv[6]*dt;
-  dv[4] += 0.5f*dv[7]*dt;
-  dv[5] += 0.5f*dv[8]*dt;
+  dv[3] += 0.5f*dv[6]*dt/mass;
+  dv[4] += 0.5f*dv[7]*dt/mass;
+  dv[5] += 0.5f*dv[8]*dt/mass;
 }
 
-
-/*
-  
-  if (uv.x > 0 && uv.y > 0) {
-    fSubIdx = fIdx*nSubFace + UV_IDX(uv.x - 1, uv.y - 1) + nSubVtx - nSub - 1;
-    idxOut[3*fSubIdx + 0] = tessGetIdx(uv.x, uv.y, heLoops, heFaces,  heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
-    idxOut[3*fSubIdx + 1] = tessGetIdx(uv.x-1, uv.y, heLoops, heFaces,  heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
-    idxOut[3*fSubIdx + 2] = tessGetIdx(uv.x, uv.y-1, heLoops, heFaces,  heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
-  }
-
-  if (uv.x+uv.y < nSub) {
-    fSubIdx = fIdx*nSubFace + UV_IDX(uv.x, uv.y);
-    idxOut[3*fSubIdx + 0] = tessGetIdx(uv.x, uv.y, heLoops, heFaces,  heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
-    idxOut[3*fSubIdx + 1] = tessGetIdx(uv.x+1, uv.y, heLoops, heFaces,  heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
-    idxOut[3*fSubIdx + 2] = tessGetIdx(uv.x, uv.y + 1, heLoops, heFaces, heTessOrder, fIdx, nVtx, nHe, nFace, nSub);
-  }
-*/
-__global__ void kPhysClick(int nSub, int nSubVtx, int fSubIdx, 
+__global__ void kPhysClick(int nSub, int nSubVtx, int fSubIdx,
                             const HeData *heFaces, const float *vData, const float *force,
                             float *dv) {
   int fIdx = fSubIdx / (nSub*nSub);
@@ -331,19 +233,41 @@ __global__ void kPhysClick(int nSub, int nSubVtx, int fSubIdx,
   const float *v0 = &vData[PPM_NVARS*he0.src], *v1 = &vData[PPM_NVARS*he1.src], *v2 = &vData[PPM_NVARS*he2.src];
   float *dv0 = &dv[9*he0.src], *dv1 = &dv[9*he1.src], *dv2 = &dv[9*he2.src];
 
-  dv0[6] += w * force[0];
-  dv0[7] += w * force[1];
-  dv0[8] += w * force[2];
-  dv1[6] += uv.x * force[0];
-  dv1[7] += uv.x * force[1];
-  dv1[8] += uv.x * force[2];
-  dv2[6] += uv.y * force[0];
-  dv2[7] += uv.y * force[1];
-  dv2[8] += uv.y * force[2];
+  dv0[6] += w * force[0] ;
+  dv0[7] += w * force[1] ;
+  dv0[8] += w * force[2] ;
+  dv1[6] += uv.x * force[0] ;
+  dv1[7] += uv.x * force[1] ;
+  dv1[8] += uv.x * force[2] ;
+  dv2[6] += uv.y * force[0] ;
+  dv2[7] += uv.y * force[1] ;
+  dv2[8] += uv.y * force[2] ;
 }
 
-__global__ void kPhysClick_RigidBody(int nSub, int nSubVtx, int fSubIdx, 
-                            const HeData *heFaces, const float *vData,
+__global__ void kPhysNonInertial(int nVtx, glm::vec3 angVel, const float *cm,
+                                 const float *vTessData, float *dv) {
+  int vIdx = threadIdx.x + blockIdx.x * blockDim.x;
+  if (vIdx >= nVtx)
+    return;
+
+  vTessData = &vTessData[PPM_NVARS*vIdx];
+  dv = &dv[9*vIdx];
+
+  glm::vec3 r(vTessData[0] - cm[0], vTessData[1] - cm[1], vTessData[2] - cm[2]);
+  float dot = r[0]*angVel[0] + r[1]*angVel[1] + r[2]*angVel[2];
+  float ang = angVel[0]*angVel[0] + angVel[1]*angVel[1] + angVel[2]*angVel[2];
+
+  glm::vec3 cf;
+  cf[0] = dot*angVel[0] - ang*r[0];
+  cf[1] = dot*angVel[1] - ang*r[1];
+  cf[2] = dot*angVel[2] - ang*r[2];
+  dv[6] += cf[0];
+  dv[7] += cf[1];
+  dv[8] += cf[2];
+}
+
+__global__ void kPhysClick_RigidBody(int nSub, int nSubVtx, int fSubIdx,
+                            const HeData *heFaces, const float *cm, const float *vData,
                            const float *force, float *rbTorque) {
   int fIdx = fSubIdx / (nSub*nSub);
   int uvOff = fSubIdx - fIdx*nSub*nSub;
@@ -362,8 +286,8 @@ __global__ void kPhysClick_RigidBody(int nSub, int nSubVtx, int fSubIdx,
   const float *v0 = &vData[PPM_NVARS*he0.src], *v1 = &vData[PPM_NVARS*he1.src], *v2 = &vData[PPM_NVARS*he2.src];
 
   glm::vec3 arm;
-  for (int i = 0; i < 3; i++) 
-    arm[i] = w*v0[i] + uv.x*v1[i] + uv.y*v2[i];
+  for (int i = 0; i < 3; i++)
+    arm[i] = w*(v0[i]-cm[i]) + uv.x*(v1[i]-cm[i]) + uv.y*(v2[i]-cm[i]);
   rbTorque[0] = arm[1]*force[2] - arm[2]*force[1];
   rbTorque[1] = arm[2]*force[0] - arm[0]*force[2];
   rbTorque[2] = arm[0]*force[1] - arm[1]*force[0];
@@ -385,14 +309,14 @@ int PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir) {
   }
   glm::vec3 lp0(lp0_4.x/lp0_4.w, lp0_4.y/lp0_4.w, lp0_4.z/lp0_4.w);
   glm::vec3 ldir(ldir_4.x, ldir_4.y, ldir_4.z);
-  
+
   unsigned int *dev_count;
   cudaMalloc(&dev_count, sizeof(unsigned int));
   cudaMemset(dev_count, 0, sizeof(unsigned int));
   dim3 blkCnt((nFace*nSubFace + 255) / 256), blkDim(256);
-  kMeshIntersect<<<blkCnt,blkDim>>>(false, false, nFace*nSubFace, dev_tessIdx, dev_tessVtx, lp0, ldir, dev_count, nullptr, nullptr);
+  kMeshIntersect<<<blkCnt,blkDim>>>(false, false, nFace*nSubFace, dev_tessIdx, dev_tessVtx, p0, dir, dev_count, nullptr, nullptr);
   checkCUDAError("kMeshIntersect", __LINE__);
-  
+
   unsigned int count;
   cudaMemcpy(&count, dev_count, sizeof(unsigned int), cudaMemcpyDeviceToHost);
   if (!count) {
@@ -400,19 +324,19 @@ int PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir) {
     cudaFree(dev_count);
     return -1;
   }
-  
+
   float *dev_tOut;
   int *dev_idxOut;
   cudaMalloc(&dev_tOut, count*sizeof(float));
   cudaMalloc(&dev_idxOut, count*sizeof(int));
   kMeshIntersect<<<blkCnt,blkDim>>>(true, false, nFace*nSubFace, dev_tessIdx, dev_tessVtx, lp0, ldir, dev_count, dev_idxOut, dev_tOut);
   checkCUDAError("kMeshIntersect", __LINE__);
-  
+
   std::vector<float> tOut(count);
   std::vector<int> idxOut(count);
   cudaMemcpy(&tOut[0], dev_tOut, count*sizeof(float), cudaMemcpyDeviceToHost);
   cudaMemcpy(&idxOut[0], dev_idxOut, count*sizeof(int), cudaMemcpyDeviceToHost);
-  
+
   int minPos = std::min_element(tOut.begin(), tOut.end()) - tOut.begin();
   int idx = idxOut[minPos];
 
@@ -422,95 +346,39 @@ int PPM::intersect(const glm::vec3 &p0, const glm::vec3 &dir) {
   return idx;
 }
 
-void PPM::updateRigidBody(int clickIdx, const glm::vec3 &clickForce, float dt) {
+void PPM::updateSb(float dt) {
+  dim3 blkDim, blkCnt;
 
-  static bool done = false;
-
-  // rotation VV1, half-torque appliucation
-  rbAngMom[0] += 0.5f * dt * rbTorque[0];
-  rbAngMom[1] += 0.5f * dt * rbTorque[1];
-  rbAngMom[2] += 0.5f * dt * rbTorque[2];
- 
-  // rotation VV1, velocity application
-  glm::mat3 rot = glm::toMat3(rbRot);
-  glm::vec3 w = rot*glm::inverse(moi)*glm::transpose(rot)*rbAngMom / 1.0e3f;
-  float th = glm::length(w);
-  if (th > 0.001f) {
-    glm::quat dq = glm::angleAxis(th*dt, w/th);
-    rbRot = dq * rbRot;
-  }
-  model = glm::toMat4(rbRot);
-  model[3][0] = rbPos[0];
-  model[3][1] = rbPos[1];
-  model[3][2] = rbPos[2];
-  model[3][3] = 1.0f;
-
-  if (clickIdx > -1) {
-    // rotation VV1, get acceleration
-    float *dev_rbTorque, *dev_rbForce;
-    cudaMalloc(&dev_rbTorque, 3*sizeof(float));
-    cudaMalloc(&dev_rbForce, 3*sizeof(float));
-
-    glm::mat4 im = glm::inverse(model) ;
-    glm::vec4 lF_4(0.0f);
-    for (int i = 0; i < 4; i++) {
-      for (int j = 0; j < 3; j++) {
-        lF_4[i] += im[j][i]*clickForce[j];
-      }
-    }
-    glm::vec3 lF(1000.0f*lF_4.x, 1000.0f*lF_4.y, 1000.0f*lF_4.z);
-    cudaMemcpy(dev_rbForce, glm::value_ptr(lF), 3*sizeof(float), cudaMemcpyHostToDevice);
-    
-    kPhysClick_RigidBody<<<1,1>>>(nSub, nSubVtx, clickIdx, dev_heFaces, dev_vList, dev_rbForce, dev_rbTorque);
-    cudaMemcpy(glm::value_ptr(rbTorque), dev_rbTorque, 3*sizeof(float), cudaMemcpyDeviceToHost);
-    cudaFree(dev_rbTorque);
-    cudaFree(dev_rbForce);
-  } else {
-    rbTorque[0] = rbTorque[1] = rbTorque[2] = 0.0f;
-  }
-
-  if (!done) {
-    done = true;
-    rbTorque[0] = 25.0f;
-    rbTorque[1] = 0.0f;
-    rbTorque[2] = 0.1f;
-  };
-  // rotation VV1, half-torque
-  rbAngMom[0] += 0.5f * dt * rbTorque[0];
-  rbAngMom[1] += 0.5f * dt * rbTorque[1];
-  rbAngMom[2] += 0.5f * dt * rbTorque[2];
-}
-
-void PPM::updateCoeff(int clickIdx, const glm::vec3 &clickForce,  float dt) {
-  dim3 blkDim(128), blkCnt;
+  // softbody VV - velocity half-update
+  blkDim.x = 128;
   blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
   kPhysVerlet1<<<blkCnt,blkDim>>>(nVtx, dev_dv, mass/nHe, dev_vBndList, dt);
-  checkCUDAError("kPhysVerlet1", __LINE__); 
- 
+  checkCUDAError("kPhysVerlet1", __LINE__);
+
+  // softbody VV - position update
   blkDim.x = 16;
   blkDim.y = 64;
   blkCnt.x = (nBasis2 + blkDim.x - 1) / blkDim.x;
   blkCnt.y = (nVtx + blkDim.y - 1) / blkDim.y;
   kUpdateCoeff<<<blkCnt,blkDim>>>(nBasis2, nVtx, bezier->dev_V, 1.0, dev_dv, dev_coeff, dt);
   checkCUDAError("kUpdateCoeff", __LINE__);
+  physCalc();
 
+  // softbody VV - force update
   blkDim.x = 256;
   blkDim.y = 1;
   blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
   blkCnt.y = 1;
   int nSM = 3*blkDim.x*sizeof(float);
   kPhysNeighbor<<<blkCnt,blkDim,nSM>>>(nVtx, dev_heLoops, dev_vBndList, kSelf, kDamp, kNbr, dev_dv);
-  if (clickIdx > -1) {
-    float *dev_clickForce;
-    cudaMalloc(&dev_clickForce, 3*sizeof(float));
-    cudaMemcpy(dev_clickForce, glm::value_ptr(clickForce), 3*sizeof(float), cudaMemcpyHostToDevice);
-    kPhysClick<<<1,1>>>(nSub, nSubVtx, clickIdx, dev_heFaces, dev_vList, dev_clickForce, dev_dv);
-    cudaFree(dev_clickForce);
-  }
   checkCUDAError("kPhysNeighbor", __LINE__);
-  
+  kPhysNonInertial<<<blkCnt,blkDim>>>(nVtx, rbAngVel, dev_cm, dev_vList, dev_dv);
+  checkCUDAError("kPhysNonInertial", __LINE__);
+
+  // softbody VV - velocity half-update
+  blkDim.x = 128;
   blkCnt.x = (nVtx + blkDim.x - 1) / blkDim.x;
-  kPhysVerlet2<<<blkCnt,blkDim>>>(nVtx, dev_dv, dt);
-  checkCUDAError("kPhysVerlet2", __LINE__); 
+  kPhysVerlet2<<<blkCnt,blkDim>>>(nVtx, dev_dv, mass/nHe, dev_vBndList, dt);
+  checkCUDAError("kPhysVerlet2", __LINE__);
 }
 

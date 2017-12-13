@@ -12,13 +12,13 @@ class PpmGui : public nanogui::Screen {
     PpmGui(int w, int h);
     virtual ~PpmGui();
     void mainLoop();
-    void click(int x, int y);
     void rebuild();
     void updateCamera();
     virtual bool resizeEvent(const nanogui::Vector2i &size);
     virtual void draw(NVGcontext *ctx);
     virtual bool keyboardEvent(int key, int scancode, int action, int modifiers);
-  
+    glm::vec3 clickDir;
+
   private:
     PPM *ppm;
     std::string fName;
@@ -28,7 +28,7 @@ class PpmGui : public nanogui::Screen {
 
     nanogui::GLCanvas *canvas;
     nanogui::Widget *tools;
-    
+
     int xSize, ySize;
     float lastX, lastY, xpos, ypos;
     bool leftMousePressed, rightMousePressed;
@@ -40,10 +40,6 @@ class PpmGui : public nanogui::Screen {
     float ppmTime, fpsTime, prevTime;
     int nbFrames;
     nanogui::FloatBox<float> *ppmTimeBox;
-
-    int clickIdx;
-    float fClick;
-    glm::vec3 clickDir;
 
     Shader *shader;
 };
